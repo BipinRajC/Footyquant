@@ -1,0 +1,5 @@
+# context files
+docs/
+
+# environement files
+.env
