@@ -67,5 +67,7 @@ def is_sharp(book_slug: str) -> bool:
     return book_slug.lower() in SHARP_BOOKS
 
 
-def implied_prob(decimal_odds: float) -> float:
+def implied_prob(decimal_odds: float) -> float | None:
+    if not decimal_odds or decimal_odds <= 0:
+        return None
     return round(1.0 / decimal_odds, 6)
