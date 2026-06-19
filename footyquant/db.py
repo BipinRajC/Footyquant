@@ -119,3 +119,13 @@ def record_call(provider: str, count: int = 1):
             ),
             {"c": count, "t": datetime.now(timezone.utc), "p": provider},
         )
+
+
+def resolve_team(name: str) -> int | None:
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT canonical_id FROM teams WHERE name = :n OR :n = ANY(aliases)"),
+            {"n": name},
+        ).fetchone()
+        return row[0] if row else None
