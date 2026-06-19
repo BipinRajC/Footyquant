@@ -1,5 +1,14 @@
 # context files
 docs/
+.claude/
 
 # environement files
 .env
+
+# cache files
+__pycache__/
+*.pyc
+.ruff_cache/
+
+# virtual environment
+.venv/
