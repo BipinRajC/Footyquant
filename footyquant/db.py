@@ -125,7 +125,9 @@ def resolve_team(name: str) -> int | None:
     engine = get_engine()
     with engine.connect() as conn:
         row = conn.execute(
-            text("SELECT canonical_id FROM teams WHERE name = :n OR :n = ANY(aliases)"),
+            text(
+                "SELECT canonical_id FROM teams WHERE name = :n OR aliases @> to_jsonb(CAST(:n AS text))"
+            ),
             {"n": name},
         ).fetchone()
         return row[0] if row else None
