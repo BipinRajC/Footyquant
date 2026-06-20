@@ -20,7 +20,7 @@ def _bulk_insert(rows: list[dict]):
         return
     engine = get_engine()
     with engine.begin() as conn:
-        raw = conn.connection.connection
+        raw = conn.connection.driver_connection
         execute_values(
             raw.cursor(),
             """INSERT INTO odds_snapshots
