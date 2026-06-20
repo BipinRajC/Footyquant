@@ -26,7 +26,10 @@ CREATE TABLE IF NOT EXISTS teams (
     aliases JSONB DEFAULT '[]'::jsonb,
     confederation TEXT,
     oddspapi_participant_id TEXT,
-    sofascore_id TEXT
+    sofascore_id TEXT,
+    polymarket_slug TEXT,
+    kalshi_ticker TEXT,
+    fbref_team_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS matches (
@@ -65,7 +68,10 @@ CREATE TABLE IF NOT EXISTS odds_snapshots (
     implied_prob REAL NOT NULL,
     is_sharp BOOLEAN DEFAULT FALSE,
     captured_at_utc TIMESTAMPTZ NOT NULL,
-    source TEXT NOT NULL DEFAULT 'current'
+    source TEXT NOT NULL DEFAULT 'current',
+    volume REAL,
+    liquidity REAL,
+    bid_ask_spread REAL
 );
 
 CREATE TABLE IF NOT EXISTS predictions (
@@ -84,8 +90,53 @@ CREATE TABLE IF NOT EXISTS api_budget (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS prediction_market_snapshots (
+    id SERIAL PRIMARY KEY,
+    match_id INTEGER REFERENCES matches(match_id),
+    source TEXT NOT NULL,
+    market_type TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    line REAL,
+    price REAL NOT NULL,
+    volume REAL,
+    liquidity REAL,
+    bid_ask_spread REAL,
+    market_id TEXT,
+    captured_at_utc TIMESTAMPTZ NOT NULL,
+    raw_response JSONB
+);
+
+CREATE TABLE IF NOT EXISTS team_stats (
+    id SERIAL PRIMARY KEY,
+    team_id INTEGER REFERENCES teams(canonical_id),
+    stat_type TEXT NOT NULL,
+    value REAL NOT NULL,
+    sample_window TEXT,
+    as_of_date DATE NOT NULL,
+    match_count_in_window INTEGER,
+    opponent_strength_avg REAL,
+    source TEXT NOT NULL DEFAULT 'fbref',
+    captured_at_utc TIMESTAMPTZ NOT NULL,
+    raw_response JSONB
+);
+
+CREATE TABLE IF NOT EXISTS data_coverage (
+    id SERIAL PRIMARY KEY,
+    match_id INTEGER REFERENCES matches(match_id),
+    market TEXT NOT NULL,
+    oddspapi_available BOOLEAN DEFAULT FALSE,
+    polymarket_available BOOLEAN DEFAULT FALSE,
+    kalshi_available BOOLEAN DEFAULT FALSE,
+    fbref_available BOOLEAN DEFAULT FALSE,
+    source_count INTEGER DEFAULT 0,
+    convergence_score TEXT,
+    confidence_flag TEXT,
+    max_implied_prob_gap REAL,
+    last_updated_utc TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 INSERT INTO api_budget (provider, calls_used)
-VALUES ('oddspapi', 20)
+VALUES ('oddspapi', 35)
 ON CONFLICT (provider) DO NOTHING;
 """
 
