@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS elo_ratings (
     id SERIAL PRIMARY KEY,
     team_id INTEGER REFERENCES teams(canonical_id),
     rating REAL NOT NULL,
-    as_of_date DATE NOT NULL
+    as_of_date DATE NOT NULL,
+    UNIQUE (team_id, as_of_date, rating)
 );
 
 CREATE TABLE IF NOT EXISTS odds_snapshots (
