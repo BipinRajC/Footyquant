@@ -108,7 +108,7 @@ def _parse_current_outcomes(
                 "implied_prob": ip,
                 "is_sharp": is_sharp(book_slug),
                 "captured_at": captured_at,
-                "source": "current",
+                "source": "oddspapi_current",
             }
         )
     return rows
