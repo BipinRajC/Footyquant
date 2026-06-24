@@ -4,9 +4,6 @@ Populates teams.polymarket_slug, teams.kalshi_ticker, teams.fbref_team_id,
 and teams.confederation from known mappings and API discovery.
 """
 
-import time
-from datetime import datetime, timezone
-
 import requests
 from sqlalchemy import text
 
@@ -350,45 +347,9 @@ def apply_mappings(engine=None):
     return updated
 
 
-def seed_data_coverage(engine=None):
-    if engine is None:
-        engine = get_engine()
-
-    markets = ["1x2", "asian_handicap", "over_under", "btts"]
-    inserted = 0
-
-    with engine.begin() as conn:
-        rows = conn.execute(
-            text("""
-                SELECT match_id FROM matches
-                WHERE tournament = 'WorldCup2026' OR tournament = 'FIFA World Cup 2026'
-            """),
-        ).fetchall()
-
-        for (match_id,) in rows:
-            for market in markets:
-                conn.execute(
-                    text("""
-                        INSERT INTO data_coverage (match_id, market, last_updated_utc)
-                        VALUES (:mid, :mkt, :now)
-                        ON CONFLICT DO NOTHING
-                    """),
-                    {"mid": match_id, "mkt": market, "now": datetime.now(timezone.utc)},
-                )
-                inserted += 1
-
-    print(
-        f"Seeded {inserted} data_coverage rows ({len(rows)} matches x {len(markets)} markets)"
-    )
-    return inserted
-
-
 def main():
-    print("=== Phase A.2: Team Mapping ===")
+    print("=== Team Mapping ===")
     apply_mappings()
-
-    print("\n=== Phase A.3: Data Coverage Seeder ===")
-    seed_data_coverage()
 
     print("\nDone.")
 
