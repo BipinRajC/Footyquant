@@ -2,12 +2,12 @@ use crate::models::FeatureView;
 use crate::theme;
 use ratatui::text::{Line, Span};
 
-pub fn render_team_compare(
+pub fn render_team_compare<'a>(
     feature: &FeatureView,
-    home: &str,
-    away: &str,
+    home: &'a str,
+    away: &'a str,
     bar_width: usize,
-) -> Vec<Line> {
+) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
 
     let header = Line::from(vec![Span::raw(format!(
