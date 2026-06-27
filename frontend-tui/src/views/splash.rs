@@ -1,7 +1,7 @@
 use crate::app::App;
 use crate::ascii_art;
 use crate::theme;
-use ratatui::layout::{Alignment, Constraint, Layout};
+use ratatui::layout::Alignment;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
@@ -33,9 +33,10 @@ pub fn render(frame: &mut Frame, app: &App) {
         if title_progress > 0.0 {
             lines.push(Line::raw(""));
             let title = "MATCHDAY";
-            let visible_chars = (title.len() as f32 * title_progress).ceil() as usize;
+            let chars: Vec<char> = title.chars().collect();
+            let visible_chars = (chars.len() as f32 * title_progress).ceil() as usize;
             lines.push(Line::from(Span::styled(
-                title[..visible_chars].to_string(),
+                chars[..visible_chars].iter().collect::<String>(),
                 theme::brand(),
             )));
         }
@@ -46,9 +47,10 @@ pub fn render(frame: &mut Frame, app: &App) {
         if sub_progress > 0.0 {
             lines.push(Line::raw(""));
             let subtitle = "FIFA World Cup 2026 · Prediction Terminal";
-            let visible_chars = (subtitle.len() as f32 * sub_progress).ceil() as usize;
+            let chars: Vec<char> = subtitle.chars().collect();
+            let visible_chars = (chars.len() as f32 * sub_progress).ceil() as usize;
             lines.push(Line::from(Span::styled(
-                subtitle[..visible_chars].to_string(),
+                chars[..visible_chars].iter().collect::<String>(),
                 theme::metadata(),
             )));
         }

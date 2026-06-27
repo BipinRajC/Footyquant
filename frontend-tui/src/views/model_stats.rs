@@ -258,7 +258,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     let para = Paragraph::new(lines).scroll((app.scroll as u16, 0));
-    frame.render_widget(para, body_area);
+    frame.render_widget(para, area);
 }
 
 fn render_footer(frame: &mut Frame, area: Rect) {

@@ -2,7 +2,7 @@ use crate::app::App;
 use crate::ascii_art;
 use crate::theme;
 use crate::widgets::{prob_display, scoreline_grid, team_compare};
-use ratatui::layout::{Alignment, Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
@@ -381,7 +381,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
 
     // Render with scroll
     let para = Paragraph::new(lines).scroll((app.scroll as u16, 0));
-    frame.render_widget(para, body_area);
+    frame.render_widget(para, area);
 }
 
 fn render_footer(frame: &mut Frame, area: Rect) {
