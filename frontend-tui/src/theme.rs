@@ -62,11 +62,11 @@ pub fn confidence_style(level: &str) -> Style {
     }
 }
 
-pub fn separator() -> &str {
+pub fn separator() -> &'static str {
     "───────────────────────────────────────────────────────────"
 }
 
-pub fn short_separator() -> &str {
+pub fn short_separator() -> &'static str {
     "───────────────────────────"
 }
 
