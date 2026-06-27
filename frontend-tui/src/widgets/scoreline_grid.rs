@@ -1,7 +1,7 @@
 use crate::theme;
 use ratatui::text::{Line, Span};
 
-pub fn render_scorelines(scorelines: &[crate::models::Scoreline], width: usize) -> Vec<Line> {
+pub fn render_scorelines(scorelines: &[crate::models::Scoreline], width: usize) -> Vec<Line<'_>> {
     scorelines
         .iter()
         .take(5)
