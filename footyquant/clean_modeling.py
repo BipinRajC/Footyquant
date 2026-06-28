@@ -40,9 +40,9 @@ CREATE TABLE public.clean_wc_teams AS
 WITH wc_team_names AS (
     SELECT DISTINCT name
     FROM (
-        SELECT home_team AS name FROM public.wc_matches WHERE stage = 'group'
+        SELECT home_team AS name FROM public.wc_matches WHERE home_team NOT SIMILAR TO '[0-9]%' AND home_team NOT ILIKE '%Winner%' AND home_team NOT ILIKE '%Loser%' AND home_team NOT ILIKE '%/%'
         UNION ALL
-        SELECT away_team AS name FROM public.wc_matches WHERE stage = 'group'
+        SELECT away_team AS name FROM public.wc_matches WHERE away_team NOT SIMILAR TO '[0-9]%' AND away_team NOT ILIKE '%Winner%' AND away_team NOT ILIKE '%Loser%' AND away_team NOT ILIKE '%/%'
     ) names
 ), resolved AS (
     SELECT
@@ -79,6 +79,7 @@ CREATE TABLE public.clean_wc_fixtures AS
 SELECT
     w.*,
     (w.stage = 'group') AS is_group_stage,
+    (w.stage = 'knockout') AS is_knockout,
     (w.home_score IS NOT NULL AND w.away_score IS NOT NULL) AS is_played,
     CASE WHEN w.home_score IS NULL THEN 'scheduled' ELSE 'played' END AS match_state
 FROM public.wc_matches w
@@ -311,6 +312,32 @@ WITH odds AS (
     FROM public.clean_wc_fixtures f
     LEFT JOIN public.clean_wc_teams ht ON ht.wc_team_name = f.home_team
     LEFT JOIN public.clean_wc_teams at ON at.wc_team_name = f.away_team
+), fotmob_stats AS (
+    SELECT DISTINCT ON (f.match_id)
+        f.match_id,
+        r.possession_home, r.possession_away,
+        r.xg_home, r.xg_away,
+        r.xgot_home, r.xgot_away,
+        r.shots_home, r.shots_away,
+        r.shots_ontarget_home, r.shots_ontarget_away,
+        r.corners_home, r.corners_away,
+        r.yellow_cards_home, r.yellow_cards_away,
+        r.fouls_home, r.fouls_away,
+        r.passes_accurate_home, r.passes_accurate_away,
+        r.tackles_home, r.tackles_away,
+        r.saves_home, r.saves_away,
+        r.duels_won_home, r.duels_won_away,
+        r.aerials_won_home, r.aerials_won_away,
+        r.big_chances_home, r.big_chances_away,
+        r.touches_opp_box_home, r.touches_opp_box_away,
+        r.offsides_home, r.offsides_away
+    FROM public.wcmatches_richstat_fotmob r
+    JOIN public.matches m ON m.fotmob_match_id = r.fotmob_match_id
+    JOIN public.clean_wc_fixtures f ON f.match_date::date = m.date_utc
+    JOIN public.clean_wc_teams ht ON ht.canonical_id = m.home_team_id
+    JOIN public.clean_wc_teams at ON at.canonical_id = m.away_team_id
+    WHERE (f.home_team = ht.wc_team_name AND f.away_team = at.wc_team_name)
+       OR (f.home_team = at.wc_team_name AND f.away_team = ht.wc_team_name)
 )
 SELECT
     f.match_id,
@@ -380,8 +407,25 @@ SELECT
         (hf.form_score_l5 IS NOT NULL AND af.form_score_l5 IS NOT NULL)::int +
         (h2h.h2h_matches_played IS NOT NULL)::int
     ) / 5.0 AS feature_completeness_score,
-    (f.match_state = 'played') AS is_training_row
+    (f.match_state = 'played') AS is_training_row,
+    fs.possession_home, fs.possession_away,
+    fs.xg_home AS fotmob_xg_home, fs.xg_away AS fotmob_xg_away,
+    fs.xgot_home, fs.xgot_away,
+    fs.shots_home AS fotmob_shots_home, fs.shots_away AS fotmob_shots_away,
+    fs.shots_ontarget_home, fs.shots_ontarget_away,
+    fs.corners_home AS fotmob_corners_home, fs.corners_away AS fotmob_corners_away,
+    fs.yellow_cards_home, fs.yellow_cards_away,
+    fs.fouls_home AS fotmob_fouls_home, fs.fouls_away AS fotmob_fouls_away,
+    fs.passes_accurate_home, fs.passes_accurate_away,
+    fs.tackles_home AS fotmob_tackles_home, fs.tackles_away AS fotmob_tackles_away,
+    fs.saves_home, fs.saves_away,
+    fs.duels_won_home, fs.duels_won_away,
+    fs.aerials_won_home, fs.aerials_won_away,
+    fs.big_chances_home, fs.big_chances_away,
+    fs.touches_opp_box_home, fs.touches_opp_box_away,
+    fs.offsides_home, fs.offsides_away
 FROM fixture_teams f
+LEFT JOIN fotmob_stats fs ON fs.match_id = f.match_id
 LEFT JOIN odds o ON o.match_id = f.match_id
 LEFT JOIN form hf ON hf.team_id = f.home_team_id
 LEFT JOIN form af ON af.team_id = f.away_team_id
