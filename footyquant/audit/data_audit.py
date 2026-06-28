@@ -65,26 +65,24 @@ group_total = q(
 knockout_total = q(
     "SELECT COUNT(*) as c FROM clean_wc_feature_view WHERE stage = 'knockout'"
 )[0].c
-log(
-    f"  Total rows: {total} ({group_total} group stage, {knockout_total} knockout placeholders)"
-)
-log(
-    f"  NOTE: Knockout placeholders have TBD teams — NULLs there are EXPECTED, not bugs."
-)
+log(f"  Total rows: {total} ({group_total} group stage, {knockout_total} knockout)")
 
 for c in cols:
-    nulls_group = q(
-        f"SELECT COUNT(*) as c FROM clean_wc_feature_view WHERE stage = 'group' AND {c.column_name} IS NULL"
+    nulls_played = q(
+        f"SELECT COUNT(*) as c FROM clean_wc_feature_view WHERE home_score IS NOT NULL AND {c.column_name} IS NULL"
     )[0].c
     nulls_total = q(
         f"SELECT COUNT(*) as c FROM clean_wc_feature_view WHERE {c.column_name} IS NULL"
     )[0].c
-    pct = round(nulls_group / group_total * 100, 1) if group_total > 0 else 0
-    if nulls_group > 0:
+    played_total = q(
+        "SELECT COUNT(*) as c FROM clean_wc_feature_view WHERE home_score IS NOT NULL"
+    )[0].c
+    pct = round(nulls_played / played_total * 100, 1) if played_total > 0 else 0
+    if nulls_played > 0:
         lvl = "GOOD" if pct < 10 else "WEAK" if pct < 50 else "BAD"
         flag(
             lvl,
-            f"{c.column_name}: {nulls_group}/{group_total} NULL in group stage ({pct}%) — {nulls_total}/{total} total",
+            f"{c.column_name}: {nulls_played}/{played_total} NULL in completed matches ({pct}%) — {nulls_total}/{total} total",
         )
 
 # Numeric stats
@@ -292,7 +290,7 @@ log("\n2d. ODDS / MARKET FEATURES")
 contam = q("""
     SELECT match_id, home_team, away_team, kalshi_home_prob, kalshi_draw_prob, kalshi_away_prob
     FROM clean_wc_feature_view
-    WHERE home_score IS NOT NULL AND stage = 'group'
+    WHERE home_score IS NOT NULL
     AND (kalshi_home_prob <= 0.02 OR kalshi_home_prob >= 0.98
          OR kalshi_draw_prob <= 0.02 OR kalshi_draw_prob >= 0.98
          OR kalshi_away_prob <= 0.02 OR kalshi_away_prob >= 0.98)
@@ -300,7 +298,7 @@ contam = q("""
 if len(contam) > 0:
     flag(
         "BAD",
-        f"Post-settlement contamination: {len(contam)} group matches have extreme Kalshi odds (<=0.02 or >=0.98)",
+        f"Post-settlement contamination: {len(contam)} matches have extreme Kalshi odds (<=0.02 or >=0.98)",
     )
     for c in contam[:5]:
         log(
@@ -531,7 +529,7 @@ log("=" * 60)
 log("\n4a. TRAINING SET SIZE")
 usable = q("""
     SELECT COUNT(*) as c FROM clean_wc_feature_view
-    WHERE home_score IS NOT NULL AND stage = 'group'
+    WHERE home_score IS NOT NULL
     AND kalshi_home_prob IS NOT NULL
     AND home_elo IS NOT NULL
     AND feature_completeness_score >= 0.65
