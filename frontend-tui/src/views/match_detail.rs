@@ -63,7 +63,11 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::raw(""));
 
     // Section 2: The Fixture
-    let group = pred.group_name.as_deref().unwrap_or("?");
+    let stage_label = if pred.stage == "knockout" {
+        "ROUND OF 32".to_string()
+    } else {
+        format!("GROUP {}", pred.group_name.as_deref().unwrap_or("?"))
+    };
     let date_str = if pred.match_date.len() >= 16 {
         format!(
             "{} · {} UTC",
@@ -75,7 +79,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     };
 
     lines.push(Line::from(Span::styled(
-        format!("          GROUP {}", group),
+        format!("          {}", stage_label),
         theme::section_header(),
     )));
     lines.push(Line::from(Span::styled(
@@ -288,17 +292,22 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
         theme::label_gray(),
     )));
     lines.push(Line::raw(""));
-    let stage = &pred.stage;
-    let group = pred.group_name.as_deref().unwrap_or("?");
-    lines.push(Line::from(Span::styled(
-        format!("{} · Group {}", stage, group),
-        theme::narrative(),
-    )));
+    let context_line = if pred.stage == "knockout" {
+        format!("Round of 32 · Knockout Stage")
+    } else {
+        format!(
+            "Group Stage · Group {}",
+            pred.group_name.as_deref().unwrap_or("?")
+        )
+    };
+    let context_desc = if pred.stage == "knockout" {
+        "Winner advances to the Round of 16. Loser is eliminated."
+    } else {
+        "Qualification scenarios depend on other group results."
+    };
+    lines.push(Line::from(Span::styled(context_line, theme::narrative())));
     lines.push(Line::raw(""));
-    lines.push(Line::from(Span::styled(
-        "Qualification scenarios depend on other group results.",
-        theme::metadata(),
-    )));
+    lines.push(Line::from(Span::styled(context_desc, theme::metadata())));
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
 

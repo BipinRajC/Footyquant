@@ -103,7 +103,12 @@ fn render_fixture_list(frame: &mut Frame, area: Rect, app: &App) {
                 "    ".to_string()
             };
 
-            let group = pred.group_name.as_deref().unwrap_or("?");
+            let group = pred.group_name.as_deref().unwrap_or("");
+            let stage_label = if pred.stage == "knockout" {
+                pred.stage.as_str()
+            } else {
+                group
+            };
             let time = if pred.match_date.len() >= 16 {
                 &pred.match_date[11..16]
             } else {
@@ -114,7 +119,7 @@ fn render_fixture_list(frame: &mut Frame, area: Rect, app: &App) {
             let mut spans = vec![Span::styled(prefix, theme::label_amber())];
             if selected {
                 spans.push(Span::styled(
-                    format!("Group {:<6}", group),
+                    format!("{:<10}", stage_label),
                     theme::label_amber(),
                 ));
                 spans.push(Span::styled(
@@ -127,7 +132,7 @@ fn render_fixture_list(frame: &mut Frame, area: Rect, app: &App) {
                 ));
             } else {
                 spans.push(Span::styled(
-                    format!("Group {:<6}", group),
+                    format!("{:<10}", stage_label),
                     theme::label_gray(),
                 ));
                 spans.push(Span::styled(
