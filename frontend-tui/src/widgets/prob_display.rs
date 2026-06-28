@@ -1,5 +1,18 @@
 use crate::theme;
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
+use ratatui::widgets::LineGauge;
+
+pub fn render_prob_gauge(label: &str, prob: f64, _width: usize) -> LineGauge<'static> {
+    let pct = format!("{}%", (prob * 100.0) as u32);
+    let label_str = format!("{:<10}", label);
+
+    LineGauge::default()
+        .label(format!("{} {}", label_str, pct))
+        .ratio(prob)
+        .filled_style(theme::label_amber())
+        .unfilled_style(Style::default().fg(theme::GRAY))
+}
 
 pub fn render_prob_bar(label: &str, prob: f64, width: usize) -> Line<'static> {
     let bar = theme::make_bar(prob, width);
