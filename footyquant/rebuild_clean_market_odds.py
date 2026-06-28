@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild model-safe Kalshi and Polymarket odds for WC 2026 group matches."""
+"""Rebuild model-safe Kalshi and Polymarket odds for WC 2026 matches."""
 
 from __future__ import annotations
 
@@ -147,7 +147,14 @@ def fixtures_by_pair() -> dict[frozenset[str], dict]:
             text("""
                 SELECT match_id, match_date, home_team, away_team, home_score, away_score, result_1x2
                 FROM public.wc_matches
-                WHERE stage = 'group'
+                WHERE home_team NOT SIMILAR TO '[0-9]%'
+                  AND away_team NOT SIMILAR TO '[0-9]%'
+                  AND home_team NOT ILIKE '%Winner%'
+                  AND home_team NOT ILIKE '%Loser%'
+                  AND away_team NOT ILIKE '%Winner%'
+                  AND away_team NOT ILIKE '%Loser%'
+                  AND home_team NOT ILIKE '%/%'
+                  AND away_team NOT ILIKE '%/%'
                 ORDER BY match_date
             """),
         ).mappings()
@@ -159,6 +166,20 @@ def fixtures_by_pair() -> dict[frozenset[str], dict]:
             )
             fixtures.append(item)
     return {pair_key(f["home_team"], f["away_team"]): f for f in fixtures}
+
+
+def existing_odds_match_ids(source: str) -> set[str]:
+    """Return match_ids that already have odds for this source."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT DISTINCT match_id FROM public.clean_market_odds
+                WHERE source = :source AND is_prekickoff = true
+            """),
+            {"source": source},
+        ).mappings()
+    return {r["match_id"] for r in rows}
 
 
 def prepare_table(truncate: bool = True) -> None:
@@ -270,6 +291,10 @@ def rebuild_kalshi(fixtures: dict[frozenset[str], dict]) -> int:
     wanted_markets = (
         {m.strip() for m in wanted.split(",")} if wanted else set(WC_SERIES)
     )
+    skip_existing = os.getenv("SKIP_EXISTING", "0") == "1"
+    existing_ids = existing_odds_match_ids("kalshi") if skip_existing else set()
+    if skip_existing:
+        print(f"Kalshi: skipping {len(existing_ids)} matches already in DB", flush=True)
     for market_type, series in WC_SERIES.items():
         if market_type not in wanted_markets:
             continue
@@ -285,6 +310,8 @@ def rebuild_kalshi(fixtures: dict[frozenset[str], dict]) -> int:
             event_home, event_away = parsed
             fixture = fixtures.get(pair_key(event_home, event_away))
             if not fixture:
+                continue
+            if skip_existing and fixture["match_id"] in existing_ids:
                 continue
             reversed_orientation = norm(event_home) == norm(fixture["away_team"])
 
@@ -449,11 +476,20 @@ def parse_poly_recovery_snapshots(
 def rebuild_polymarket(fixtures: dict[frozenset[str], dict]) -> int:
     rows = []
     inserted = 0
+    skip_existing = os.getenv("SKIP_EXISTING", "0") == "1"
+    existing_ids = existing_odds_match_ids("polymarket") if skip_existing else set()
+    if skip_existing:
+        print(
+            f"Polymarket: skipping {len(existing_ids)} matches already in DB",
+            flush=True,
+        )
     events = polymarket_events_by_fixture(fixtures)
     print(f"Polymarket mapped events: {len(events)}", flush=True)
     fixtures_by_id = {f["match_id"]: f for f in fixtures.values()}
 
     for index, (match_id, fixture) in enumerate(fixtures_by_id.items(), start=1):
+        if skip_existing and match_id in existing_ids:
+            continue
         event = events.get(match_id)
         if not event:
             print(f"  Polymarket missing event {match_id}", flush=True)
@@ -560,10 +596,9 @@ def rebuild_xlsx_odds() -> int:
                         to_jsonb(x.*) AS raw_row
                     FROM x_norm x
                     JOIN public.wc_matches w
-                      ON w.stage = 'group'
-                     AND x.date IN (w.match_date::date, (w.match_date + INTERVAL '1 day')::date)
-                     AND w.home_team = x.home_norm
-                     AND w.away_team = x.away_norm
+                      ON x.date IN (w.match_date::date, (w.match_date + INTERVAL '1 day')::date)
+                      AND w.home_team = x.home_norm
+                      AND w.away_team = x.away_norm
                 ), odds AS (
                     SELECT match_id, match_date, 'xlsx_bet365'::text AS source, 'home'::text AS outcome, b365_h AS decimal_odds, raw_row FROM mapped WHERE b365_h IS NOT NULL
                     UNION ALL SELECT match_id, match_date, 'xlsx_bet365', 'draw', b365_d, raw_row FROM mapped WHERE b365_d IS NOT NULL
@@ -617,7 +652,7 @@ def rebuild_xlsx_odds() -> int:
 
 def main() -> None:
     fixtures = fixtures_by_pair()
-    print(f"Fixtures: {len(fixtures)} group matches")
+    print(f"Fixtures: {len(fixtures)} matches")
     truncate = os.getenv("TRUNCATE_CLEAN_ODDS", "1") != "0"
     prepare_table(truncate=truncate)
     sources = {

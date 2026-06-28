@@ -103,7 +103,10 @@ def get_market(ticker: str) -> dict:
 def parse_match_title(title: str) -> tuple[str, str] | None:
     """Extract (home, away) from 'Netherlands vs Sweden: Spread' or 'Netherlands vs Sweden'."""
     clean = re.sub(
-        r":\s*(Spread|BTTS|Total Goals|Winner\??)$", "", title, flags=re.IGNORECASE
+        r":\s*(Spread|BTTS|Total Goals|Winner\??|Regulation Time Moneyline|Moneyline)$",
+        "",
+        title,
+        flags=re.IGNORECASE,
     ).strip()
     parts = re.split(r"\s+vs\.?\s+", clean, maxsplit=1)
     if len(parts) == 2:
