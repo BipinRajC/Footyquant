@@ -204,15 +204,25 @@ pub struct FeatureModelMeta {
 }
 
 impl ModelParams {
+    fn parse_json<T: serde::de::DeserializeOwned>(v: &serde_json::Value) -> Option<T> {
+        match v {
+            serde_json::Value::Object(_) | serde_json::Value::Array(_) => {
+                serde_json::from_value::<T>(v.clone()).ok()
+            }
+            serde_json::Value::String(s) => serde_json::from_str::<T>(s).ok(),
+            _ => None,
+        }
+    }
+
     pub fn validation(&self) -> Option<ValidationMetrics> {
         self.validation_metrics
             .as_ref()
-            .and_then(|v| serde_json::from_value::<ValidationMetrics>(v.clone()).ok())
+            .and_then(|v| Self::parse_json::<ValidationMetrics>(v))
     }
 
     pub fn feature_meta(&self) -> Option<FeatureModelMeta> {
         self.feature_model_metadata
             .as_ref()
-            .and_then(|v| serde_json::from_value::<FeatureModelMeta>(v.clone()).ok())
+            .and_then(|v| Self::parse_json::<FeatureModelMeta>(v))
     }
 }
