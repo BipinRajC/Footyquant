@@ -51,17 +51,24 @@ def get_supabase() -> object:
     url = os.environ.get("SUPABASE_URL", "")
     key = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_KEY", "")
     if not url or not key:
-        dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
-        if os.path.exists(dotenv_path):
-            with open(dotenv_path) as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("SUPABASE_URL="):
-                        url = line.split("=", 1)[1]
-                    elif line.startswith("SUPABASE_ANON_KEY="):
-                        key = line.split("=", 1)[1]
-                    elif line.startswith("SUPABASE_KEY=") and not key:
-                        key = line.split("=", 1)[1]
+        for dotenv_path in [
+            os.path.join(os.path.dirname(__file__), ".env"),
+            os.path.join(os.path.dirname(__file__), "..", ".env"),
+            os.path.join(os.path.dirname(__file__), "..", "..", ".env"),
+            ".env",
+        ]:
+            if os.path.exists(dotenv_path):
+                with open(dotenv_path) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("SUPABASE_URL="):
+                            url = line.split("=", 1)[1]
+                        elif line.startswith("SUPABASE_ANON_KEY="):
+                            key = line.split("=", 1)[1]
+                        elif line.startswith("SUPABASE_KEY=") and not key:
+                            key = line.split("=", 1)[1]
+                if url and key:
+                    break
     if not url or not key:
         raise RuntimeError("SUPABASE_URL and SUPABASE_ANON_KEY must be set")
     return create_client(url, key)
@@ -1695,12 +1702,12 @@ def temporal_holdout_validation(
     dc_model: dict,
     odds_index: dict | None = None,
 ) -> dict:
-    """Train on first 30 group matches, test on remaining completed matches."""
+    """Train on first 60% of completed matches, test on remaining 40%."""
     completed = feature_df[feature_df["is_training_row"] == True].copy()
     completed = completed.sort_values("match_date").reset_index(drop=True)
 
     n = len(completed)
-    split = min(30, n - 5)
+    split = max(int(n * 0.6), n - 10)
     train = completed.iloc[:split]
     test = completed.iloc[split:]
 
