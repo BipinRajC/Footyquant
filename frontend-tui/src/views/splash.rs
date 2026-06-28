@@ -10,11 +10,11 @@ pub fn render(frame: &mut Frame, app: &App) {
     let area = frame.area();
     let frame_num = app.frame_count;
 
-    let progress = (frame_num as f32 / 90.0).min(1.0);
+    let progress = (frame_num as f32 / 180.0).min(1.0);
 
     let mut lines: Vec<Line> = Vec::new();
 
-    let blank_lines = ((1.0 - progress) * 10.0) as usize;
+    let blank_lines = ((1.0 - progress) * 8.0) as usize;
     for _ in 0..blank_lines {
         lines.push(Line::raw(""));
     }
