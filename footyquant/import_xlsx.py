@@ -1,5 +1,6 @@
 """Import WorldCup2026.xlsx data into matches table."""
 
+import os
 import pandas as pd
 from sqlalchemy import text
 
@@ -20,7 +21,8 @@ def _float(v):
 
 def main():
     engine = get_engine()
-    xlsx = pd.ExcelFile("data/WorldCup2026.xlsx")
+    root = os.path.dirname(os.path.dirname(__file__))
+    xlsx = pd.ExcelFile(os.path.join(root, "data", "WorldCup2026.xlsx"))
 
     all_names = set()
     sheet_data = {}
