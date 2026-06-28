@@ -37,7 +37,7 @@ def main():
 
     env_setup = " || true"  # don't crash on env errors
 
-    root = os.path.dirname(os.path.dirname(__file__))
+    root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     venv_python = os.path.join(root, ".venv", "bin", "python")
 
     steps = [

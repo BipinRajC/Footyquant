@@ -287,101 +287,6 @@ def find_fotmob_id(home_team, away_team, match_date):
 def main():
     engine = get_engine()
 
-    known_ids = [
-        # Group stage - Round 1
-        4667751,
-        4667752,
-        4667757,
-        4667771,
-        4667758,
-        4667764,
-        4667765,
-        4667772,
-        4667777,
-        4667783,
-        4667778,
-        4667784,
-        4667798,
-        4667790,
-        4667799,
-        4667791,
-        4667804,
-        4667805,
-        4667812,
-        4667813,
-        4667819,
-        4667825,
-        4667826,
-        4667820,
-        # Group stage - Round 2
-        4667753,
-        4667759,
-        4667760,
-        4667754,
-        4667774,
-        4667766,
-        4667767,
-        4667773,
-        4667786,
-        4667780,
-        4667779,
-        4667785,
-        4667801,
-        4667793,
-        4667800,
-        4667792,
-        4667815,
-        4667807,
-        4667806,
-        4667814,
-        4667822,
-        4667828,
-        4667827,
-        4667821,
-        # Group stage - Round 3
-        4667762,
-        4667761,
-        4667769,
-        4667768,
-        4667755,
-        4667756,
-        4667782,
-        4667781,
-        4667788,
-        4667787,
-        4667776,
-        4667775,
-        4667808,
-        4667809,
-        4667803,
-        4667802,
-        4667795,
-        4667794,
-        4667830,
-        4667829,
-        4667823,
-        4667824,
-        4667817,
-        4667816,
-        # Round of 32
-        4653705,
-        4653711,
-        4653703,
-        4653706,
-        4653712,
-        4653704,
-        4653713,
-        4653714,
-        4653710,
-        4653709,
-        4653708,
-        4653707,
-        4653717,
-        4653716,
-        4653715,
-        4653718,
-    ]
-
     with engine.connect() as conn:
         existing = {
             row[0]
@@ -389,6 +294,42 @@ def main():
                 text("SELECT fotmob_match_id FROM public.wcmatches_richstat_fotmob")
             ).fetchall()
         }
+
+    api_key = os.environ.get("PARSE_API_KEY", "")
+    known_ids = []
+    if api_key:
+        print("    Fetching match IDs from Parse.bot API...")
+        try:
+            import urllib.request
+
+            req = urllib.request.Request(
+                "https://api.parse.bot/scraper/645b8e03-271d-4c85-97e7-35d5733a2d78/get_league_details?league_id=77",
+                headers={"X-API-Key": api_key},
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                api_data = json.loads(resp.read().decode())
+            all_matches = api_data["data"]["fixtures"]["allMatches"]
+            known_ids = [m["id"] for m in all_matches if m.get("id")]
+            print(f"    Found {len(known_ids)} total WC2026 matches from API")
+        except Exception as e:
+            print(f"    API error: {e}")
+
+    if not known_ids:
+        print("    Falling back to DB query for fotmob IDs...")
+        with engine.connect() as conn:
+            known_ids = [
+                row[0]
+                for row in conn.execute(
+                    text("""
+                        SELECT DISTINCT m.fotmob_match_id
+                        FROM public.matches m
+                        WHERE m.tournament ILIKE '%world cup%'
+                          AND m.date_utc >= '2026-06-11'
+                          AND m.fotmob_match_id IS NOT NULL
+                        ORDER BY m.fotmob_match_id
+                    """)
+                ).fetchall()
+            ]
 
     total = 0
     new = 0

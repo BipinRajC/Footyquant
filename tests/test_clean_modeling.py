@@ -11,6 +11,7 @@ def test_clean_modeling_table_contract_contains_core_sources():
         "clean_international_matches",
         "clean_team_elo",
         "clean_team_form_stats",
+        "clean_team_fotmob_form",
         "clean_wc_feature_view",
     ]
 

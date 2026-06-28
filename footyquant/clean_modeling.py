@@ -9,6 +9,7 @@ CLEAN_TABLES = [
     "clean_international_matches",
     "clean_team_elo",
     "clean_team_form_stats",
+    "clean_team_fotmob_form",
     "clean_wc_feature_view",
 ]
 
@@ -25,6 +26,7 @@ def build_clean_modeling_sql() -> list[str]:
         _clean_international_matches_sql(),
         _clean_team_elo_sql(),
         _clean_team_form_stats_sql(),
+        _clean_team_fotmob_form_sql(),
         _clean_wc_feature_view_sql(),
         *_index_sql(),
     ]
@@ -261,6 +263,76 @@ JOIN public.clean_wc_teams c ON (
 """.strip()
 
 
+def _clean_team_fotmob_form_sql() -> str:
+    return """
+CREATE TABLE public.clean_team_fotmob_form AS
+WITH team_matches AS (
+    SELECT
+        r.home_team AS team_name,
+        r.match_date,
+        r.xg_home AS xg_for,
+        r.xg_away AS xg_against,
+        r.possession_home AS possession,
+        r.shots_ontarget_home AS shots_ontarget,
+        r.big_chances_home AS big_chances,
+        r.passes_accurate_home AS passes_accurate,
+        r.duels_won_home AS duels_won,
+        r.corners_home AS corners,
+        r.yellow_cards_home AS yellow_cards
+    FROM public.wcmatches_richstat_fotmob r
+    WHERE r.home_score IS NOT NULL
+    UNION ALL
+    SELECT
+        r.away_team AS team_name,
+        r.match_date,
+        r.xg_away AS xg_for,
+        r.xg_home AS xg_against,
+        r.possession_away AS possession,
+        r.shots_ontarget_away AS shots_ontarget,
+        r.big_chances_away AS big_chances,
+        r.passes_accurate_away AS passes_accurate,
+        r.duels_won_away AS duels_won,
+        r.corners_away AS corners,
+        r.yellow_cards_away AS yellow_cards
+    FROM public.wcmatches_richstat_fotmob r
+    WHERE r.home_score IS NOT NULL
+), team_matches_ranked AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (PARTITION BY team_name ORDER BY match_date DESC) AS rn
+    FROM team_matches
+), team_form AS (
+    SELECT
+        team_name,
+        match_date AS as_of_date,
+        AVG(xg_for) FILTER (WHERE rn <= 3) AS xg_for_l3,
+        AVG(xg_against) FILTER (WHERE rn <= 3) AS xg_against_l3,
+        AVG(possession) FILTER (WHERE rn <= 3) AS possession_l3,
+        AVG(shots_ontarget) FILTER (WHERE rn <= 3) AS shots_ontarget_l3,
+        AVG(big_chances) FILTER (WHERE rn <= 3) AS big_chances_l3,
+        AVG(passes_accurate) FILTER (WHERE rn <= 3) AS passes_accurate_l3,
+        AVG(duels_won) FILTER (WHERE rn <= 3) AS duels_won_l3,
+        AVG(corners) FILTER (WHERE rn <= 3) AS corners_l3,
+        AVG(yellow_cards) FILTER (WHERE rn <= 3) AS yellow_cards_l3,
+        AVG(xg_for) FILTER (WHERE rn <= 5) AS xg_for_l5,
+        AVG(xg_against) FILTER (WHERE rn <= 5) AS xg_against_l5,
+        AVG(possession) FILTER (WHERE rn <= 5) AS possession_l5,
+        AVG(shots_ontarget) FILTER (WHERE rn <= 5) AS shots_ontarget_l5,
+        AVG(big_chances) FILTER (WHERE rn <= 5) AS big_chances_l5,
+        AVG(passes_accurate) FILTER (WHERE rn <= 5) AS passes_accurate_l5,
+        AVG(duels_won) FILTER (WHERE rn <= 5) AS duels_won_l5,
+        AVG(corners) FILTER (WHERE rn <= 5) AS corners_l5,
+        AVG(yellow_cards) FILTER (WHERE rn <= 5) AS yellow_cards_l5,
+        COUNT(*) FILTER (WHERE rn <= 3) AS match_count_l3,
+        COUNT(*) FILTER (WHERE rn <= 5) AS match_count_l5
+    FROM team_matches_ranked
+    GROUP BY team_name, match_date
+)
+SELECT * FROM team_form
+ORDER BY team_name, as_of_date
+""".strip()
+
+
 def _clean_wc_feature_view_sql() -> str:
     return """
 CREATE TABLE public.clean_wc_feature_view AS
@@ -423,7 +495,23 @@ SELECT
     fs.aerials_won_home, fs.aerials_won_away,
     fs.big_chances_home, fs.big_chances_away,
     fs.touches_opp_box_home, fs.touches_opp_box_away,
-    fs.offsides_home, fs.offsides_away
+    fs.offsides_home, fs.offsides_away,
+    hff.xg_for_l3 AS home_xg_for_l3, aff.xg_for_l3 AS away_xg_for_l3,
+    hff.xg_against_l3 AS home_xg_against_l3, aff.xg_against_l3 AS away_xg_against_l3,
+    hff.possession_l3 AS home_possession_l3, aff.possession_l3 AS away_possession_l3,
+    hff.shots_ontarget_l3 AS home_shots_ot_l3, aff.shots_ontarget_l3 AS away_shots_ot_l3,
+    hff.big_chances_l3 AS home_big_chances_l3, aff.big_chances_l3 AS away_big_chances_l3,
+    hff.passes_accurate_l3 AS home_passes_l3, aff.passes_accurate_l3 AS away_passes_l3,
+    hff.duels_won_l3 AS home_duels_l3, aff.duels_won_l3 AS away_duels_l3,
+    hff.corners_l3 AS home_corners_l3, aff.corners_l3 AS away_corners_l3,
+    hff.yellow_cards_l3 AS home_yellow_l3, aff.yellow_cards_l3 AS away_yellow_l3,
+    hff.xg_for_l5 AS home_xg_for_l5, aff.xg_for_l5 AS away_xg_for_l5,
+    hff.xg_against_l5 AS home_xg_against_l5, aff.xg_against_l5 AS away_xg_against_l5,
+    hff.possession_l5 AS home_possession_l5, aff.possession_l5 AS away_possession_l5,
+    hff.shots_ontarget_l5 AS home_shots_ot_l5, aff.shots_ontarget_l5 AS away_shots_ot_l5,
+    hff.big_chances_l5 AS home_big_chances_l5, aff.big_chances_l5 AS away_big_chances_l5,
+    hff.match_count_l3 AS home_match_count_l3, aff.match_count_l3 AS away_match_count_l3,
+    hff.match_count_l5 AS home_match_count_l5, aff.match_count_l5 AS away_match_count_l5
 FROM fixture_teams f
 LEFT JOIN fotmob_stats fs ON fs.match_id = f.match_id
 LEFT JOIN odds o ON o.match_id = f.match_id
@@ -476,6 +564,30 @@ LEFT JOIN LATERAL (
           OR (im.home_team_id = f.away_team_id AND im.away_team_id = f.home_team_id)
       )
 ) h2h ON TRUE
+LEFT JOIN LATERAL (
+    SELECT
+        xg_for_l3, xg_against_l3, possession_l3, shots_ontarget_l3,
+        big_chances_l3, passes_accurate_l3, duels_won_l3, corners_l3, yellow_cards_l3,
+        xg_for_l5, xg_against_l5, possession_l5, shots_ontarget_l5,
+        big_chances_l5, passes_accurate_l5, duels_won_l5, corners_l5, yellow_cards_l5,
+        match_count_l3, match_count_l5
+    FROM public.clean_team_fotmob_form ff
+    WHERE ff.team_name = f.home_team AND ff.as_of_date <= f.match_date::date
+    ORDER BY ff.as_of_date DESC
+    LIMIT 1
+) hff ON TRUE
+LEFT JOIN LATERAL (
+    SELECT
+        xg_for_l3, xg_against_l3, possession_l3, shots_ontarget_l3,
+        big_chances_l3, passes_accurate_l3, duels_won_l3, corners_l3, yellow_cards_l3,
+        xg_for_l5, xg_against_l5, possession_l5, shots_ontarget_l5,
+        big_chances_l5, passes_accurate_l5, duels_won_l5, corners_l5, yellow_cards_l5,
+        match_count_l3, match_count_l5
+    FROM public.clean_team_fotmob_form ff
+    WHERE ff.team_name = f.away_team AND ff.as_of_date <= f.match_date::date
+    ORDER BY ff.as_of_date DESC
+    LIMIT 1
+) aff ON TRUE
 """.strip()
 
 
@@ -489,4 +601,5 @@ def _index_sql() -> list[str]:
         "CREATE INDEX clean_team_elo_team_date_idx ON public.clean_team_elo (team_id, as_of_date)",
         "CREATE INDEX clean_team_form_stats_team_idx ON public.clean_team_form_stats (team_id, stat_type, sample_window)",
         "CREATE UNIQUE INDEX clean_wc_feature_view_match_idx ON public.clean_wc_feature_view (match_id)",
+        "CREATE INDEX clean_team_fotmob_form_team_date_idx ON public.clean_team_fotmob_form (team_name, as_of_date)",
     ]

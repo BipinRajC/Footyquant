@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
+from scipy.special import gammaln
 from scipy.stats import poisson
 from sklearn.linear_model import LogisticRegression
 from sklearn.isotonic import IsotonicRegression
@@ -25,7 +26,7 @@ warnings.filterwarnings("ignore")
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
-MODEL_VERSION = "v1.0.0"
+MODEL_VERSION = "v2.0.0"
 BOOTSTRAP_N = 1000
 DC_HALF_LIFE_DAYS = 730
 DC_MAX_GOALS = 5
@@ -588,28 +589,53 @@ def apply_calibration_corrections(probs: dict, corrections: dict) -> dict:
 FEATURE_COLS = [
     "elo_diff",
     "form_score_diff",
-    "xg_diff",
     "rest_days_diff",
     "h2h_home_win_rate",
+    "fotmob_xg_for_diff_l3",
+    "fotmob_xg_against_diff_l3",
+    "fotmob_possession_diff_l3",
+    "fotmob_shots_ot_diff_l3",
+    "fotmob_big_chances_diff_l3",
+    "fotmob_passes_diff_l3",
+    "fotmob_xg_for_diff_l5",
+    "fotmob_xg_against_diff_l5",
+    "fotmob_possession_diff_l5",
+    "fotmob_shots_ot_diff_l5",
+    "fotmob_big_chances_diff_l5",
 ]
 
 
 def _build_feature_matrix(
     feature_df: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.Series | None]:
-    """Build feature differentials for completed matches."""
+    """Build feature differentials for completed matches (15 features)."""
     df = feature_df[feature_df["is_training_row"] == True].copy()
     df = df.sort_values("match_date").reset_index(drop=True)
 
     X = pd.DataFrame(index=df.index)
     X["elo_diff"] = (df["home_elo"] - df["away_elo"]) / 100.0
     X["form_score_diff"] = df["home_form_score"] - df["away_form_score"]
-    X["xg_diff"] = df["home_xg_diff"] - df["away_xg_diff"]
     X["rest_days_diff"] = (
         df["days_since_last_match_home"] - df["days_since_last_match_away"]
     ) / 7.0
     h2h_total = df["h2h_matches_played"].clip(lower=1)
     X["h2h_home_win_rate"] = df["h2h_home_wins"] / h2h_total
+
+    fotmob_diffs = {
+        "fotmob_xg_for_diff_l3": ("home_xg_for_l3", "away_xg_for_l3"),
+        "fotmob_xg_against_diff_l3": ("home_xg_against_l3", "away_xg_against_l3"),
+        "fotmob_possession_diff_l3": ("home_possession_l3", "away_possession_l3"),
+        "fotmob_shots_ot_diff_l3": ("home_shots_ot_l3", "away_shots_ot_l3"),
+        "fotmob_big_chances_diff_l3": ("home_big_chances_l3", "away_big_chances_l3"),
+        "fotmob_passes_diff_l3": ("home_passes_l3", "away_passes_l3"),
+        "fotmob_xg_for_diff_l5": ("home_xg_for_l5", "away_xg_for_l5"),
+        "fotmob_xg_against_diff_l5": ("home_xg_against_l5", "away_xg_against_l5"),
+        "fotmob_possession_diff_l5": ("home_possession_l5", "away_possession_l5"),
+        "fotmob_shots_ot_diff_l5": ("home_shots_ot_l5", "away_shots_ot_l5"),
+        "fotmob_big_chances_diff_l5": ("home_big_chances_l5", "away_big_chances_l5"),
+    }
+    for col, (home_col, away_col) in fotmob_diffs.items():
+        X[col] = df[home_col].fillna(0.0) - df[away_col].fillna(0.0)
 
     X = X.fillna(0.0)
 
@@ -811,8 +837,14 @@ def apply_feature_corrections(
 def _prepare_dc_data(
     intl_df: pd.DataFrame,
     tour_df: pd.DataFrame,
+    feature_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Merge international and tournament matches into a unified DC dataset."""
+    """Merge international and tournament matches into a unified DC dataset.
+
+    When feature_df is provided with fotmob_xg_home/away columns, those
+    matches use xG as the target instead of raw goals, with a confidence
+    weight multiplier (1.5x) since xG is more predictive.
+    """
     intl = pd.DataFrame(
         {
             "date": intl_df["date_utc"],
@@ -841,6 +873,25 @@ def _prepare_dc_data(
     df["hg"] = df["hg"].astype(int)
     df["ag"] = df["ag"].astype(int)
     df = df[(df["hg"] >= 0) & (df["ag"] >= 0) & (df["hg"] <= 10) & (df["ag"] <= 10)]
+    df["dc_weight"] = 1.0
+    df["hg"] = df["hg"].astype(float)
+    df["ag"] = df["ag"].astype(float)
+
+    if feature_df is not None and "fotmob_xg_home" in feature_df.columns:
+        xg_map = feature_df[
+            ["match_date", "home_team", "away_team", "fotmob_xg_home", "fotmob_xg_away"]
+        ].dropna()
+        for _, xrow in xg_map.iterrows():
+            match_mask = (
+                (df["date"].dt.date == pd.to_datetime(xrow["match_date"]).date())
+                & (df["home"] == xrow["home_team"])
+                & (df["away"] == xrow["away_team"])
+            )
+            if match_mask.any():
+                df.loc[match_mask, "hg"] = float(xrow["fotmob_xg_home"])
+                df.loc[match_mask, "ag"] = float(xrow["fotmob_xg_away"])
+                df.loc[match_mask, "dc_weight"] = 1.5
+
     df = df.sort_values("date").reset_index(drop=True)
     return df
 
@@ -887,18 +938,28 @@ def _log_factorial_arr(arr: np.ndarray) -> np.ndarray:
 def fit_dixon_coles(dc_df: pd.DataFrame) -> dict:
     """Fit Dixon-Coles model via maximum likelihood (vectorized).
 
+    Supports xG-enhanced training: when dc_df has a 'dc_weight' column,
+    those weights are multiplied into the likelihood. xG values (floats)
+    use gamma-based log factorial for non-integer support.
+
     Returns dict with attack/defense params, home advantage, and team index.
     """
     teams = sorted(set(dc_df["home"].unique()) | set(dc_df["away"].unique()))
     team_idx = {t: i for i, t in enumerate(teams)}
     n_teams = len(teams)
 
-    weights = _dc_time_weights(dc_df["date"])
+    time_weights = _dc_time_weights(dc_df["date"])
+    dc_weight = (
+        dc_df["dc_weight"].values
+        if "dc_weight" in dc_df.columns
+        else np.ones(len(dc_df))
+    )
+    weights = time_weights * dc_weight
 
     home_idx = dc_df["home"].map(team_idx).values.astype(int)
     away_idx = dc_df["away"].map(team_idx).values.astype(int)
-    hg = dc_df["hg"].values.astype(int)
-    ag = dc_df["ag"].values.astype(int)
+    hg = dc_df["hg"].values.astype(float)
+    ag = dc_df["ag"].values.astype(float)
     neutral = dc_df["is_neutral"].values.astype(float)
     n_matches = len(hg)
 
@@ -920,8 +981,13 @@ def fit_dixon_coles(dc_df: pd.DataFrame) -> dict:
         lambda_a = np.exp(attack[away_idx] + defense[home_idx])
 
         # Vectorized Poisson PMF using log for stability
-        log_fact_hg = _log_factorial_arr(hg)
-        log_fact_ag = _log_factorial_arr(ag)
+        # Use gammaln for float xG values, factorial cache for integer goals
+        if np.issubdtype(hg.dtype, np.floating):
+            log_fact_hg = gammaln(hg + 1)
+            log_fact_ag = gammaln(ag + 1)
+        else:
+            log_fact_hg = _log_factorial_arr(hg.astype(int))
+            log_fact_ag = _log_factorial_arr(ag.astype(int))
         log_p_hg = hg * np.log(lambda_h) - lambda_h - log_fact_hg
         log_p_ag = ag * np.log(lambda_a) - lambda_a - log_fact_ag
 
@@ -1374,6 +1440,59 @@ def _build_upcoming_feature_vector(row: pd.Series) -> np.ndarray:
         ]
     )
     return np.nan_to_num(features, nan=0.0)
+
+
+# ─── Stats-Based Markets ──────────────────────────────────────────────────────
+
+
+def predict_stats_market(
+    home_stat: float,
+    away_stat: float,
+    lines: list[float],
+) -> dict:
+    """Predict O/U probability for a stats market using Poisson distribution.
+
+    Args:
+        home_stat: Rolling average stat for home team (e.g., avg corners)
+        away_stat: Rolling average stat for away team
+        lines: List of O/U lines to evaluate (e.g., [7.5, 9.5, 10.5])
+
+    Returns dict with chosen line, over_prob, under_prob.
+    """
+    expected_total = (home_stat + away_stat) / 2.0 * 2.0
+    if expected_total <= 0:
+        return {"line": lines[0], "over_prob": 0.5, "under_prob": 0.5}
+
+    best_line = lines[0]
+    best_diff = 999.0
+    best_over = 0.5
+
+    for line in lines:
+        over_prob = 1.0 - poisson.cdf(line, expected_total)
+        diff = abs(over_prob - 0.5)
+        if diff < best_diff:
+            best_diff = diff
+            best_line = line
+            best_over = over_prob
+
+    return {
+        "line": best_line,
+        "over_prob": round(best_over, 4),
+        "under_prob": round(1.0 - best_over, 4),
+    }
+
+
+def assign_stats_confidence(
+    match_count_l3: int,
+    ci_width: float = 0.20,
+) -> str:
+    """Assign confidence for stats-based markets (no market consensus)."""
+    if match_count_l3 >= 3 and ci_width < 0.15:
+        return "HIGH"
+    elif match_count_l3 >= 2:
+        return "MEDIUM"
+    else:
+        return "LOW"
 
 
 # ─── Confidence Levels ────────────────────────────────────────────────────────
@@ -1901,7 +2020,7 @@ def main():
 
     # 3. Prepare Dixon-Coles data and fit
     print("\n  [3/9] Fitting Dixon-Coles model...")
-    dc_df = _prepare_dc_data(intl_df, tour_df)
+    dc_df = _prepare_dc_data(intl_df, tour_df, feature_df=feature_df)
     print(
         f"    DC training data: {len(dc_df)} matches, {dc_df['home'].nunique()} teams"
     )
@@ -2131,6 +2250,40 @@ def main():
             "narrative": narrative,
             "model_version": MODEL_VERSION,
         }
+
+        # Stats-based markets (from rolling Fotmob averages)
+        home_corners = row.get("home_corners_l3", None)
+        away_corners = row.get("away_corners_l3", None)
+        if home_corners is not None and away_corners is not None:
+            corners = predict_stats_market(home_corners, away_corners, [7.5, 9.5, 10.5])
+            pred["corners_line"] = corners["line"]
+            pred["corners_over_prob"] = corners["over_prob"]
+            pred["corners_under_prob"] = corners["under_prob"]
+            pred["confidence_corners"] = assign_stats_confidence(
+                int(row.get("home_match_count_l3", 0))
+            )
+
+        home_sot = row.get("home_shots_ot_l3", None)
+        away_sot = row.get("away_shots_ot_l3", None)
+        if home_sot is not None and away_sot is not None:
+            sot = predict_stats_market(home_sot, away_sot, [6.5, 8.5, 10.5])
+            pred["sot_line"] = sot["line"]
+            pred["sot_over_prob"] = sot["over_prob"]
+            pred["sot_under_prob"] = sot["under_prob"]
+            pred["confidence_sot"] = assign_stats_confidence(
+                int(row.get("home_match_count_l3", 0))
+            )
+
+        home_yellow = row.get("home_yellow_l3", None)
+        away_yellow = row.get("away_yellow_l3", None)
+        if home_yellow is not None and away_yellow is not None:
+            cards = predict_stats_market(home_yellow, away_yellow, [2.5, 3.5, 4.5])
+            pred["cards_line"] = cards["line"]
+            pred["cards_over_prob"] = cards["over_prob"]
+            pred["cards_under_prob"] = cards["under_prob"]
+            pred["confidence_cards"] = assign_stats_confidence(
+                int(row.get("home_match_count_l3", 0))
+            )
 
         # Add CIs as arrays
         if ci_1x2:
