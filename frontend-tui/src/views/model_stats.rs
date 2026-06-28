@@ -36,11 +36,12 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     let params = match &app.model_params {
         Some(p) => p,
         None => {
-            frame.render_widget(
-                Paragraph::new("  No model params available. Run model.py first.")
-                    .style(theme::metadata()),
-                area,
-            );
+            let msg = if let Some(ref err) = app.error {
+                format!("  Error fetching data: {err}")
+            } else {
+                "  No model params available. Run model.py first.".to_string()
+            };
+            frame.render_widget(Paragraph::new(msg).style(theme::metadata()), area);
             return;
         }
     };
@@ -50,7 +51,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
 
     lines.push(Line::raw(""));
 
-    // Forecast Accuracy
+    // FORECAST ACCURACY
     lines.push(Line::from(Span::styled(
         "FORECAST ACCURACY",
         theme::section_header(),
@@ -72,8 +73,8 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
             sorted.sort_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal));
 
             for (source, brier) in sorted {
-                let bar = theme::make_bar(1.0 - brier, bar_width);
                 let label = source_name(source);
+                let bar = theme::make_bar(1.0 - *brier, bar_width);
                 lines.push(Line::from(vec![
                     Span::styled(format!(" {:<12}", label), theme::narrative()),
                     Span::styled(bar, theme::label_amber()),
@@ -94,7 +95,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::raw(""));
         lines.push(Line::raw(""));
 
-        // Tournament Calibration
+        // TOURNAMENT CALIBRATION
         lines.push(Line::from(Span::styled(
             "TOURNAMENT CALIBRATION",
             theme::section_header(),
@@ -137,7 +138,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::raw(""));
         lines.push(Line::raw(""));
 
-        // Deployment Readiness
+        // DEPLOYMENT READINESS — using line gauge style
         lines.push(Line::from(Span::styled(
             "DEPLOYMENT READINESS",
             theme::section_header(),
@@ -152,23 +153,26 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
             if let (Some(model_brier), Some(baseline_brier)) =
                 (temporal.brier_model, temporal.brier_baseline)
             {
+                let model_filled = ((1.0 - model_brier) * bar_width as f64).round() as usize;
+                let mut model_bar = String::with_capacity(bar_width);
+                for i in 0..bar_width {
+                    model_bar.push(if i < model_filled { '━' } else { '─' });
+                }
                 lines.push(Line::from(vec![
-                    Span::styled(" Model Brier:    ", theme::narrative()),
-                    Span::styled(format!("{:.4}", model_brier), theme::number()),
-                    Span::raw("  "),
-                    Span::styled(
-                        theme::make_bar(1.0 - model_brier, bar_width),
-                        theme::label_amber(),
-                    ),
+                    Span::styled(" Model Brier    ", theme::narrative()),
+                    Span::styled(model_bar, theme::label_amber()),
+                    Span::styled(format!("  {:.4}", model_brier), theme::number()),
                 ]));
+
+                let base_filled = ((1.0 - baseline_brier) * bar_width as f64).round() as usize;
+                let mut base_bar = String::with_capacity(bar_width);
+                for i in 0..bar_width {
+                    base_bar.push(if i < base_filled { '━' } else { '─' });
+                }
                 lines.push(Line::from(vec![
-                    Span::styled(" Baseline Brier: ", theme::narrative()),
-                    Span::styled(format!("{:.4}", baseline_brier), theme::number()),
-                    Span::raw("  "),
-                    Span::styled(
-                        theme::make_bar(1.0 - baseline_brier, bar_width),
-                        theme::label_gray(),
-                    ),
+                    Span::styled(" Baseline Brier ", theme::narrative()),
+                    Span::styled(base_bar, theme::label_gray()),
+                    Span::styled(format!("  {:.4}", baseline_brier), theme::number()),
                 ]));
                 lines.push(Line::raw(""));
 
@@ -189,7 +193,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::raw(""));
         lines.push(Line::raw(""));
 
-        // Feature Signal
+        // FEATURE SIGNAL
         lines.push(Line::from(Span::styled(
             "FEATURE SIGNAL",
             theme::section_header(),
@@ -235,26 +239,25 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
 
         lines.push(Line::raw(""));
         lines.push(Line::raw(""));
-
-        // Footer info
         lines.push(Line::from(Span::styled(
             theme::separator(),
             theme::label_gray(),
         )));
         lines.push(Line::raw(""));
+
         let n_matches = params.n_training_matches.unwrap_or(0);
         let fitted = if params.fitted_at.len() >= 16 {
             &params.fitted_at[..16]
         } else {
             &params.fitted_at
         };
-        lines.push(Line::from(vec![Span::styled(
+        lines.push(Line::from(Span::styled(
             format!(
                 " {} · {} training matches · Fitted: {}",
                 params.model_version, n_matches, fitted
             ),
             theme::metadata(),
-        )]));
+        )));
     }
 
     let para = Paragraph::new(lines).scroll((app.scroll as u16, 0));
