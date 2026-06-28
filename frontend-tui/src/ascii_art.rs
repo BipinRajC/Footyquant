@@ -12,7 +12,7 @@ pub fn trophy() -> &'static str {
 }
 
 pub fn trophy_small() -> &'static str {
-    "╔═╗\n║▲║\n╚═╝"
+    "◉"
 }
 
 pub fn floodlights() -> &'static str {
