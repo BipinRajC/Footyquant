@@ -89,7 +89,6 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
 
-    // Team names centered
     let home = &pred.home_team;
     let away = &pred.away_team;
     lines.push(Line::from(vec![
@@ -99,28 +98,24 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled(format!("{:>16}", away.to_uppercase()), theme::team_name()),
     ]));
 
-    // Elo and form
-    let elo_str = if let Some(f) = &app.current_feature {
-        format!(
-            "          {:<16}          {:>16}",
-            format!("Elo: {}", f.home_elo.map(|e| e as i32).unwrap_or(0)),
-            format!("Elo: {}", f.away_elo.map(|e| e as i32).unwrap_or(0)),
-        )
-    } else {
-        String::new()
-    };
-    lines.push(Line::from(Span::styled(elo_str, theme::metadata())));
-
-    let form_str = if let Some(f) = &app.current_feature {
-        format!(
-            "          {:<16}          {:>16}",
-            format!("Form: {:.1}", f.home_form_score.unwrap_or(0.0)),
-            format!("Form: {:.1}", f.away_form_score.unwrap_or(0.0)),
-        )
-    } else {
-        String::new()
-    };
-    lines.push(Line::from(Span::styled(form_str, theme::metadata())));
+    if let Some(f) = &app.current_feature {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "          {:<16}          {:>16}",
+                format!("Elo: {}", f.home_elo.map(|e| e as i32).unwrap_or(0)),
+                format!("Elo: {}", f.away_elo.map(|e| e as i32).unwrap_or(0))
+            ),
+            theme::metadata(),
+        )));
+        lines.push(Line::from(Span::styled(
+            format!(
+                "          {:<16}          {:>16}",
+                format!("Form: {:.1}", f.home_form_score.unwrap_or(0.0)),
+                format!("Form: {:.1}", f.away_form_score.unwrap_or(0.0))
+            ),
+            theme::metadata(),
+        )));
+    }
 
     lines.push(Line::from(Span::styled(
         format!("     {}", ascii_art::vs_separator()),
@@ -148,23 +143,15 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     )));
     lines.push(Line::raw(""));
 
-    // 1X2
+    // 1X2 — using thin line gauge style (━ filled, ─ unfilled)
     lines.push(Line::from(Span::styled("1X2", theme::label_amber())));
-    lines.push(prob_display::render_prob_bar(
-        &pred.home_team,
-        pred.prob_home,
-        bar_width,
-    ));
-    lines.push(prob_display::render_prob_bar(
-        "Draw",
-        pred.prob_draw,
-        bar_width,
-    ));
-    lines.push(prob_display::render_prob_bar(
-        &pred.away_team,
-        pred.prob_away,
-        bar_width,
-    ));
+    for (label, prob) in [
+        (home.as_str(), pred.prob_home),
+        ("Draw", pred.prob_draw),
+        (away.as_str(), pred.prob_away),
+    ] {
+        lines.push(render_line_gauge(label, prob, bar_width));
+    }
     lines.push(prob_display::render_confidence_line(
         &pred.confidence_1x2,
         pred.prob_home_ci.as_deref(),
@@ -180,13 +167,13 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
         Span::raw("     Line "),
         Span::styled(format!("{:+.1}", pred.ah_line), theme::number()),
         Span::raw("    "),
-        Span::styled(&pred.home_team, theme::narrative()),
+        Span::styled(home.as_str(), theme::narrative()),
         Span::styled(
             format!(" {}%", (pred.ah_home_prob * 100.0) as u32),
             theme::number(),
         ),
         Span::raw(" · "),
-        Span::styled(&pred.away_team, theme::narrative()),
+        Span::styled(away.as_str(), theme::narrative()),
         Span::styled(
             format!(" {}%", (pred.ah_away_prob * 100.0) as u32),
             theme::number(),
@@ -199,17 +186,13 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     ]));
     lines.push(Line::raw(""));
 
-    // Over/Under 2.5
+    // Over/Under 2.5 — using block gauge style (▮ filled, ░ unfilled)
     lines.push(Line::from(Span::styled(
         "OVER / UNDER 2.5",
         theme::label_amber(),
     )));
-    lines.push(prob_display::render_prob_bar(
-        "Over 2.5",
-        pred.over_25_prob,
-        bar_width,
-    ));
-    lines.push(prob_display::render_prob_bar(
+    lines.push(render_block_gauge("Over 2.5", pred.over_25_prob, bar_width));
+    lines.push(render_block_gauge(
         "Under 2.5",
         pred.under_25_prob,
         bar_width,
@@ -220,21 +203,13 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     ));
     lines.push(Line::raw(""));
 
-    // BTTS
+    // BTTS — using diamond gauge style (◆ filled, ◇ unfilled)
     lines.push(Line::from(Span::styled(
         "BOTH TEAMS TO SCORE",
         theme::label_amber(),
     )));
-    lines.push(prob_display::render_prob_bar(
-        "Yes",
-        pred.btts_yes_prob,
-        bar_width,
-    ));
-    lines.push(prob_display::render_prob_bar(
-        "No",
-        pred.btts_no_prob,
-        bar_width,
-    ));
+    lines.push(render_diamond_gauge("Yes", pred.btts_yes_prob, bar_width));
+    lines.push(render_diamond_gauge("No", pred.btts_no_prob, bar_width));
     lines.push(prob_display::render_confidence_line(
         &pred.confidence_btts,
         pred.btts_yes_ci.as_deref(),
@@ -242,7 +217,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
 
-    // Section 4: Expected Goals
+    // Section 4: Expected Goals — using vertical bar blocks
     lines.push(Line::from(Span::styled(
         "EXPECTED GOALS",
         theme::section_header(),
@@ -254,34 +229,16 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::raw(""));
     lines.push(Line::from(vec![
         Span::raw("     "),
-        Span::styled(&pred.home_team, theme::team_name()),
+        Span::styled(home.as_str(), theme::team_name()),
+        Span::raw("                          "),
+        Span::styled(away.as_str(), theme::team_name()),
     ]));
+    lines.push(render_xg_bars(pred.dc_home_xg, pred.dc_away_xg, bar_width));
     lines.push(Line::from(vec![
         Span::raw("     "),
         Span::styled(format!("{:.2}", pred.dc_home_xg), theme::number()),
-    ]));
-    lines.push(Line::from(vec![
-        Span::raw("     "),
-        Span::styled(
-            theme::make_bar(pred.dc_home_xg / 3.0, bar_width),
-            theme::label_amber(),
-        ),
-    ]));
-    lines.push(Line::raw(""));
-    lines.push(Line::from(vec![
-        Span::raw("     "),
-        Span::styled(&pred.away_team, theme::team_name()),
-    ]));
-    lines.push(Line::from(vec![
-        Span::raw("     "),
+        Span::raw("                              "),
         Span::styled(format!("{:.2}", pred.dc_away_xg), theme::number()),
-    ]));
-    lines.push(Line::from(vec![
-        Span::raw("     "),
-        Span::styled(
-            theme::make_bar(pred.dc_away_xg / 3.0, bar_width),
-            theme::label_amber(),
-        ),
     ]));
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
@@ -314,7 +271,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
             theme::label_gray(),
         )));
         lines.push(Line::raw(""));
-        for l in team_compare::render_team_compare(feature, &pred.home_team, &pred.away_team, 12) {
+        for l in team_compare::render_team_compare(feature, home, away, 12) {
             lines.push(l);
         }
         lines.push(Line::raw(""));
@@ -355,10 +312,9 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
         theme::label_gray(),
     )));
     lines.push(Line::raw(""));
-    // Wrap narrative
-    let narrative = &pred.narrative;
+
     let max_width = area.width.saturating_sub(4) as usize;
-    let words: Vec<&str> = narrative.split_whitespace().collect();
+    let words: Vec<&str> = pred.narrative.split_whitespace().collect();
     let mut current_line = String::new();
     for word in words {
         if current_line.is_empty() {
@@ -379,9 +335,90 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     }
     lines.push(Line::raw(""));
 
-    // Render with scroll
     let para = Paragraph::new(lines).scroll((app.scroll as u16, 0));
     frame.render_widget(para, area);
+}
+
+fn render_line_gauge(label: &str, prob: f64, width: usize) -> Line<'static> {
+    let filled = ((prob * width as f64).round() as usize).min(width);
+    let mut bar = String::with_capacity(width);
+    for i in 0..width {
+        bar.push(if i < filled { '━' } else { '─' });
+    }
+    let pct = format!("{}%", (prob * 100.0) as u32);
+    Line::from(vec![
+        Span::styled(format!("{:>10} ", label), theme::narrative()),
+        Span::styled(bar, theme::label_amber()),
+        Span::raw("  "),
+        Span::styled(pct, theme::number()),
+    ])
+}
+
+fn render_block_gauge(label: &str, prob: f64, width: usize) -> Line<'static> {
+    let filled = ((prob * width as f64).round() as usize).min(width);
+    let mut bar = String::with_capacity(width);
+    for i in 0..width {
+        bar.push(if i < filled { '▮' } else { '▯' });
+    }
+    let pct = format!("{}%", (prob * 100.0) as u32);
+    Line::from(vec![
+        Span::styled(format!("{:>10} ", label), theme::narrative()),
+        Span::styled(bar, theme::label_amber()),
+        Span::raw("  "),
+        Span::styled(pct, theme::number()),
+    ])
+}
+
+fn render_diamond_gauge(label: &str, prob: f64, width: usize) -> Line<'static> {
+    let filled = ((prob * width as f64).round() as usize).min(width);
+    let mut bar = String::with_capacity(width);
+    for i in 0..width {
+        bar.push(if i < filled { '◆' } else { '◇' });
+    }
+    let pct = format!("{}%", (prob * 100.0) as u32);
+    Line::from(vec![
+        Span::styled(format!("{:>10} ", label), theme::narrative()),
+        Span::styled(bar, theme::label_amber()),
+        Span::raw("  "),
+        Span::styled(pct, theme::number()),
+    ])
+}
+
+fn render_xg_bars(home_xg: f64, away_xg: f64, width: usize) -> Line<'static> {
+    let max_xg = 3.0;
+    let home_filled = ((home_xg / max_xg * width as f64).round() as usize).min(width);
+    let away_filled = ((away_xg / max_xg * width as f64).round() as usize).min(width);
+
+    let blocks = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+    let mut home_bar = String::with_capacity(width);
+    for i in 0..width {
+        if i < home_filled {
+            let block_idx =
+                ((home_xg / max_xg * blocks.len() as f64) as usize).min(blocks.len() - 1);
+            home_bar.push(blocks[block_idx]);
+        } else {
+            home_bar.push(' ');
+        }
+    }
+
+    let mut away_bar = String::with_capacity(width);
+    for i in 0..width {
+        if i < away_filled {
+            let block_idx =
+                ((away_xg / max_xg * blocks.len() as f64) as usize).min(blocks.len() - 1);
+            away_bar.push(blocks[block_idx]);
+        } else {
+            away_bar.push(' ');
+        }
+    }
+
+    Line::from(vec![
+        Span::raw("     "),
+        Span::styled(home_bar, theme::label_amber()),
+        Span::raw("                        "),
+        Span::styled(away_bar, theme::narrative()),
+    ])
 }
 
 fn render_footer(frame: &mut Frame, area: Rect) {
