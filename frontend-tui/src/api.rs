@@ -166,14 +166,11 @@ impl SupabaseClient {
             {
                 continue;
             }
-            let is_ko = row.stage.as_deref() == Some("knockout");
-            if is_ko {
-                if let Some(ref result) = row.result_1x2 {
-                    match result.as_str() {
-                        "H" => eliminated.push(away.clone()),
-                        "A" => eliminated.push(home.clone()),
-                        _ => {}
-                    }
+            if let Some(ref result) = row.result_1x2 {
+                match result.as_str() {
+                    "H" => eliminated.push(away.clone()),
+                    "A" => eliminated.push(home.clone()),
+                    _ => {}
                 }
             }
             for team in [home.clone(), away.clone()] {
