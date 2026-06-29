@@ -1146,6 +1146,74 @@ def dc_market_probs(matrix: np.ndarray) -> dict:
 # ─── Blending & Calibration ───────────────────────────────────────────────────
 
 
+def compute_qualification_probs(
+    dc_model: dict,
+    home_team: str,
+    away_team: str,
+    probs_90min: dict,
+) -> dict:
+    """Derive To Qualify probabilities from 90-minute model output.
+
+    Uses the DC model to simulate extra time (30 min, reduced home advantage).
+    Penalties are modelled as 50/50 with a slight home-favouring adjustment
+    based on the DC home advantage parameter.
+    """
+    p_home_90 = probs_90min["home"]
+    p_draw_90 = probs_90min["draw"]
+    p_away_90 = probs_90min["away"]
+
+    if p_draw_90 <= 0:
+        return {
+            "home_qualify_prob": p_home_90,
+            "away_qualify_prob": p_away_90,
+            "extra_time_prob": 0.0,
+            "penalties_prob": 0.0,
+        }
+
+    idx = dc_model["team_idx"]
+    if home_team not in idx or away_team not in idx:
+        et_home_adv = 0.05
+        p_home_et = 0.40
+        p_draw_et = 0.20
+        p_away_et = 0.40
+    else:
+        h = idx[home_team]
+        a = idx[away_team]
+        et_home_adv = dc_model["home_adv"] * 0.4
+        lambda_h_et = np.exp(
+            dc_model["attack"][h] + dc_model["defense"][a] + et_home_adv
+        ) * (30.0 / 90.0)
+        lambda_a_et = np.exp(dc_model["attack"][a] + dc_model["defense"][h]) * (
+            30.0 / 90.0
+        )
+        et_matrix = dc_scoreline_matrix(
+            lambda_h_et, lambda_a_et, dc_model["rho"], max_goals=6
+        )
+        p_home_et = float(np.tril(et_matrix, -1).sum())
+        p_draw_et = float(np.trace(et_matrix))
+        p_away_et = float(np.triu(et_matrix, 1).sum())
+
+    penalty_home_adv = min(dc_model.get("home_adv", 0.12) * 0.3, 0.05)
+    p_home_pen = 0.5 + penalty_home_adv
+    p_away_pen = 0.5 - penalty_home_adv
+
+    p_extra_time = p_draw_90
+    p_penalties = p_draw_90 * p_draw_et
+
+    home_qualify = p_home_90 + p_draw_90 * (p_home_et + p_draw_et * p_home_pen)
+    away_qualify = p_away_90 + p_draw_90 * (p_away_et + p_draw_et * p_away_pen)
+    total = home_qualify + away_qualify
+    home_qualify /= total
+    away_qualify /= total
+
+    return {
+        "home_qualify_prob": round(home_qualify, 4),
+        "away_qualify_prob": round(away_qualify, 4),
+        "extra_time_prob": round(p_extra_time, 4),
+        "penalties_prob": round(p_penalties, 4),
+    }
+
+
 def blend_market_dc(
     market_probs: np.ndarray,
     dc_probs: np.ndarray,
@@ -1581,11 +1649,39 @@ def generate_narrative(
     confidence_1x2: str,
     feature_result: dict,
     corrections: dict,
+    qual: dict | None = None,
 ) -> str:
-    """Generate a 3-5 sentence plain English narrative for a match."""
+    """Generate a 3-5 sentence plain English narrative for a match.
+
+    For knockout matches, the narrative focuses on qualification probability
+    with 90-minute probabilities as supporting detail.
+    """
     home = row["home_team"]
     away = row["away_team"]
     elo_diff = (row.get("home_elo", 0) or 0) - (row.get("away_elo", 0) or 0)
+    is_knockout = row.get("stage") == "knockout"
+
+    # Qualification headline (knockout only)
+    qual_str = ""
+    if is_knockout and qual is not None:
+        hq = qual["home_qualify_prob"]
+        aq = qual["away_qualify_prob"]
+        et = qual["extra_time_prob"]
+        pen = qual["penalties_prob"]
+        if hq > aq:
+            qual_str = (
+                f"{home} are favoured to qualify ({hq:.1%}) over {away} ({aq:.1%}). "
+            )
+        else:
+            qual_str = (
+                f"{away} are favoured to qualify ({aq:.1%}) over {home} ({hq:.1%}). "
+            )
+        if et > 0.25:
+            qual_str += f"There is a {et:.0%} chance the match reaches extra time"
+            if pen > 0.10:
+                qual_str += f", with a {pen:.0%} chance of penalties. "
+            else:
+                qual_str += ". "
 
     # Team strength
     if abs(elo_diff) < 50:
@@ -2207,6 +2303,18 @@ def main():
         conf_btts = assign_confidence(ci_btts, n_sources_btts, model_beats_baseline)
         conf_ah = "LOW" if ah.get("n_sources", 0) == 0 else "MEDIUM"
 
+        # Qualification probabilities (knockout stage)
+        qual = compute_qualification_probs(
+            dc_model,
+            row["home_team"],
+            row["away_team"],
+            {
+                "home": float(final_1x2[0]),
+                "draw": float(final_1x2[1]),
+                "away": float(final_1x2[2]),
+            },
+        )
+
         # Narrative
         narrative = generate_narrative(
             row,
@@ -2218,6 +2326,7 @@ def main():
             conf_1x2,
             feature_result,
             corrections,
+            qual,
         )
 
         # Build prediction row
@@ -2249,6 +2358,10 @@ def main():
             "dc_top_scorelines": json.dumps(top_scorelines),
             "narrative": narrative,
             "model_version": MODEL_VERSION,
+            "home_qualify_prob": qual["home_qualify_prob"],
+            "away_qualify_prob": qual["away_qualify_prob"],
+            "extra_time_prob": qual["extra_time_prob"],
+            "penalties_prob": qual["penalties_prob"],
         }
 
         # Stats-based markets (from rolling Fotmob averages)
@@ -2345,13 +2458,24 @@ def _print_predictions(predictions: list[dict]):
     """Print predictions summary to console."""
     print("  ── Predictions Summary ──\n")
     for pred in predictions:
+        hq = pred.get("home_qualify_prob")
+        aq = pred.get("away_qualify_prob")
+        et = pred.get("extra_time_prob")
+        if hq is not None and aq is not None:
+            qual_line = f"  To Qualify: {pred['home_team']} {hq:.1%} | {pred['away_team']} {aq:.1%}"
+            if et and et > 0:
+                qual_line += f"  ET: {et:.0%}"
+            print(f"    {pred['home_team']:25s} vs {pred['away_team']:25s}")
+            print(f"      {qual_line}")
+        else:
+            print(
+                f"    {pred['home_team']:25s} vs {pred['away_team']:25s}  "
+                f"H={pred['prob_home']:.1%} D={pred['prob_draw']:.1%} A={pred['prob_away']:.1%}  "
+                f"[{pred['confidence_1x2']}]"
+            )
         print(
-            f"    {pred['home_team']:25s} vs {pred['away_team']:25s}  "
-            f"H={pred['prob_home']:.1%} D={pred['prob_draw']:.1%} A={pred['prob_away']:.1%}  "
-            f"[{pred['confidence_1x2']}]"
-        )
-        print(
-            f"      O/U 2.5: {pred['over_25_prob']:.1%}/{pred['under_25_prob']:.1%}  "
+            f"      90-min: H={pred['prob_home']:.1%} D={pred['prob_draw']:.1%} A={pred['prob_away']:.1%}  "
+            f"O/U 2.5: {pred['over_25_prob']:.1%}/{pred['under_25_prob']:.1%}  "
             f"BTTS: {pred['btts_yes_prob']:.1%}/{pred['btts_no_prob']:.1%}  "
             f"AH: {pred['ah_line']:+.1f}"
         )
