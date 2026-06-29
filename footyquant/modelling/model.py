@@ -638,8 +638,10 @@ def _build_feature_matrix(
         X[col] = df[home_col].fillna(0.0) - df[away_col].fillna(0.0)
 
     X = X.fillna(0.0)
+    X = X.apply(pd.to_numeric, errors="coerce").fillna(0.0)
 
     y = df["result_1x2"].map({"H": 0, "D": 1, "A": 2})
+    y = pd.to_numeric(y, errors="coerce").fillna(0).astype(int)
     return X, y
 
 
