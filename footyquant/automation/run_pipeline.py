@@ -43,39 +43,43 @@ def main():
     steps = [
         (
             f"PYTHONPATH={root} {venv_python} {os.path.join(root, 'footyquant', 'update_wc2026_matches.py')}",
-            "1/9 Update wc2026_matches from Excel",
+            "1/10 Update wc2026_matches from Excel",
         ),
         (
             f"PYTHONPATH={root} {venv_python} {os.path.join(root, 'footyquant', 'propagate_results.py')}",
-            "2/9 Propagate results to wc_matches",
+            "2/10 Propagate results to wc_matches",
         ),
         (
             f"PYTHONPATH={root} {venv_python} {os.path.join(root, 'footyquant', 'update_knockout_fixtures.py')}",
-            "3/9 Update knockout fixtures from Excel",
+            "3/10 Update knockout fixtures from Excel",
         ),
         (
             f"TRUNCATE_CLEAN_ODDS=0 SOURCES=xlsx PYTHONPATH={root} {venv_python} -m footyquant rebuild odds",
-            "4/9 Rebuild xlsx odds (Bet365/Betfair/Max/Avg)",
+            "4/10 Rebuild xlsx odds (Bet365/Betfair/Max/Avg)",
         ),
         (
             f"TRUNCATE_CLEAN_ODDS=0 SKIP_EXISTING=1 SOURCES=kalshi PYTHONPATH={root} {venv_python} -m footyquant rebuild odds",
-            "5/9 Fetch Kalshi odds (new matches only)",
+            "5/10 Fetch Kalshi odds (new matches only)",
         ),
         (
             f"TRUNCATE_CLEAN_ODDS=0 SKIP_EXISTING=1 SOURCES=polymarket PYTHONPATH={root} {venv_python} -m footyquant rebuild odds",
-            "6/9 Fetch Polymarket odds (new matches only)",
+            "6/10 Fetch Polymarket odds (new matches only)",
         ),
         (
             f"PYTHONPATH={root} {venv_python} {os.path.join(root, 'footyquant', 'scrape_fotmob_stats.py')}",
-            "7/9 Scrape Fotmob stats for completed matches",
+            "7/10 Scrape Fotmob stats for completed matches",
+        ),
+        (
+            f"PYTHONPATH={root} {venv_python} {os.path.join(root, 'footyquant', 'propagate_knockout_results.py')}",
+            "8/10 Propagate knockout results from Fotmob to wc_matches",
         ),
         (
             f"PYTHONPATH={root} {venv_python} -m footyquant rebuild modeling",
-            "8/9 Rebuild all clean modeling tables",
+            "9/10 Rebuild all clean modeling tables",
         ),
         (
             f"PYTHONPATH={root} {venv_python} {os.path.join(root, 'footyquant', 'modelling', 'model.py')}",
-            "9/9 Retrain model and predict upcoming matches",
+            "10/10 Retrain model and predict upcoming matches",
         ),
     ]
 
