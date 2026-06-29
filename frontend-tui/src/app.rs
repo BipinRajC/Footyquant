@@ -1,6 +1,7 @@
 use crate::api::SupabaseClient;
 use crate::models::{FeatureView, MatchPrediction, ModelParams};
 use crate::splash_data::{fact_for_index, NextMatch, TeamInfo, WC_FACTS};
+use crate::timeline::{merge_timeline, CompletedMatchRow, TimelineEntry};
 use crate::views;
 use crossterm::event::{Event, EventStream, KeyCode};
 use ratatui::layout::Size;
@@ -8,6 +9,7 @@ use ratatui::DefaultTerminal;
 use ratatui_image::picker::Picker;
 use ratatui_image::protocol::Protocol;
 use ratatui_image::Resize;
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
@@ -22,6 +24,7 @@ pub enum View {
 
 enum AppMsg {
     Predictions(Vec<MatchPrediction>),
+    CompletedMatches(Vec<CompletedMatchRow>),
     ModelParams(ModelParams),
     FeatureView(FeatureView),
     Error(String),
@@ -32,6 +35,8 @@ enum AppMsg {
 pub struct App {
     pub view: View,
     pub predictions: Vec<MatchPrediction>,
+    pub completed_matches: Vec<CompletedMatchRow>,
+    pub timeline: Vec<TimelineEntry>,
     pub model_params: Option<ModelParams>,
     pub selected_match: usize,
     pub scroll: usize,
@@ -59,6 +64,8 @@ impl App {
         Ok(Self {
             view: View::Splash,
             predictions: Vec::new(),
+            completed_matches: Vec::new(),
+            timeline: Vec::new(),
             model_params: None,
             selected_match: 0,
             scroll: 0,
@@ -228,9 +235,9 @@ impl App {
                 }
                 KeyCode::Down => match self.view {
                     View::MatchList => {
-                        if !self.predictions.is_empty() {
+                        if !self.timeline.is_empty() {
                             self.selected_match =
-                                (self.selected_match + 1).min(self.predictions.len() - 1);
+                                (self.selected_match + 1).min(self.timeline.len() - 1);
                         }
                     }
                     View::MatchDetail => {
@@ -260,11 +267,27 @@ impl App {
                     _ => {}
                 },
                 KeyCode::Enter => {
-                    if self.view == View::MatchList && !self.predictions.is_empty() {
-                        self.view = View::MatchDetail;
-                        self.scroll = 0;
-                        self.current_feature = None;
-                        self.fetch_feature_for_selected();
+                    if self.view == View::MatchList {
+                        if let Some(TimelineEntry::Upcoming(pred)) = self.timeline.get(self.selected_match) {
+                            self.view = View::MatchDetail;
+                            self.scroll = 0;
+                            self.current_feature = None;
+                            let match_id = pred.match_id.clone();
+                            if let Some(tx) = &self.msg_tx {
+                                let tx = tx.clone();
+                                tokio::spawn(async move {
+                                    let api = SupabaseClient::new();
+                                    match api.fetch_feature_view(&match_id).await {
+                                        Ok(feature) => {
+                                            let _ = tx.send(AppMsg::FeatureView(feature)).await;
+                                        }
+                                        Err(e) => {
+                                            let _ = tx.send(AppMsg::Error(e)).await;
+                                        }
+                                    }
+                                });
+                            }
+                        }
                     }
                 }
                 _ => {}
@@ -285,6 +308,14 @@ impl App {
                         let _ = tx.send(AppMsg::Error(e)).await;
                     }
                 }
+                match api.fetch_completed_knockout().await {
+                    Ok(rows) => {
+                        let _ = tx.send(AppMsg::CompletedMatches(rows)).await;
+                    }
+                    Err(e) => {
+                        let _ = tx.send(AppMsg::Error(e)).await;
+                    }
+                }
                 match api.fetch_model_params().await {
                     Ok(params) => {
                         let _ = tx.send(AppMsg::ModelParams(params)).await;
@@ -297,31 +328,16 @@ impl App {
         }
     }
 
-    fn fetch_feature_for_selected(&self) {
-        if let Some(pred) = self.predictions.get(self.selected_match) {
-            let match_id = pred.match_id.clone();
-            if let Some(tx) = &self.msg_tx {
-                let tx = tx.clone();
-                tokio::spawn(async move {
-                    let api = SupabaseClient::new();
-                    match api.fetch_feature_view(&match_id).await {
-                        Ok(feature) => {
-                            let _ = tx.send(AppMsg::FeatureView(feature)).await;
-                        }
-                        Err(e) => {
-                            let _ = tx.send(AppMsg::Error(e)).await;
-                        }
-                    }
-                });
-            }
-        }
-    }
-
     fn handle_msg(&mut self, msg: AppMsg) {
         match msg {
             AppMsg::Predictions(preds) => {
                 self.predictions = preds;
+                self.rebuild_timeline();
                 self.loading = false;
+            }
+            AppMsg::CompletedMatches(rows) => {
+                self.completed_matches = rows;
+                self.rebuild_timeline();
             }
             AppMsg::ModelParams(params) => {
                 self.model_params = Some(params);
@@ -344,8 +360,30 @@ impl App {
         }
     }
 
+    fn rebuild_timeline(&mut self) {
+        let pred_lookup: HashMap<String, &MatchPrediction> = self
+            .predictions
+            .iter()
+            .map(|p| (p.match_id.clone(), p))
+            .collect();
+        self.timeline = merge_timeline(
+            self.completed_matches.clone(),
+            self.predictions.clone(),
+            &pred_lookup,
+        );
+        if self.selected_match >= self.timeline.len() && !self.timeline.is_empty() {
+            self.selected_match = self.timeline.len() - 1;
+        }
+    }
+
     pub fn current_prediction(&self) -> Option<&MatchPrediction> {
-        self.predictions.get(self.selected_match)
+        self.timeline
+            .get(self.selected_match)
+            .and_then(|e| e.as_prediction())
+    }
+
+    pub fn current_timeline_entry(&self) -> Option<&TimelineEntry> {
+        self.timeline.get(self.selected_match)
     }
 
     pub fn splash_progress(&self) -> u8 {
