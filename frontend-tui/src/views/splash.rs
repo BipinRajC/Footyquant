@@ -17,7 +17,7 @@ pub fn render(frame: &mut Frame, app: &App) {
         Constraint::Length(3),
         Constraint::Length(1),
         Constraint::Length(4),
-        Constraint::Length(2),
+        Constraint::Length(3),
         Constraint::Length(2),
         Constraint::Length(2),
         Constraint::Fill(1),
@@ -100,19 +100,42 @@ fn render_flags_zone(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    let count = 8.min(app.alive_teams.len());
-    let step = app.frame_count / 270;
-    let flags: Vec<String> = (0..count)
-        .map(|i| {
-            let idx = (i + step) % app.alive_teams.len();
-            app.alive_teams[idx].flag.to_string()
-        })
+    let chunks = Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(area);
+
+    let count = app.alive_teams.len();
+    let heading = Line::from(Span::styled(
+        format!("{} Teams Still Alive", count),
+        theme::label_gray(),
+    ));
+    frame.render_widget(
+        Paragraph::new(heading).alignment(Alignment::Center),
+        chunks[0],
+    );
+
+    let units: Vec<String> = app
+        .alive_teams
+        .iter()
+        .map(|t| format!("{}   ", t.flag))
         .collect();
 
-    let spacing = "   ";
-    let row = flags.join(spacing);
-    let line = Line::from(Span::styled(row, Style::default()));
-    frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
+    let total_units = units.len();
+    let unit_width: usize = units[0].chars().count();
+    let visible_units = (area.width as usize / unit_width).max(1);
+
+    let scroll_frame = app.frame_count / 20;
+    let start_unit = scroll_frame % total_units;
+
+    let mut row = String::new();
+    for i in 0..visible_units {
+        let unit = &units[(start_unit + i) % total_units];
+        row.push_str(unit);
+    }
+
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(row, Style::default())))
+            .alignment(Alignment::Center),
+        chunks[1],
+    );
 }
 
 fn render_fact_zone(frame: &mut Frame, area: Rect, app: &App) {

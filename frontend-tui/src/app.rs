@@ -96,9 +96,20 @@ impl App {
     fn spawn_splash_tasks(&self, terminal: &DefaultTerminal, tx: mpsc::Sender<AppMsg>) {
         let term_size = terminal.size().unwrap_or(Size::new(80, 24));
 
+        let picker = match Picker::from_query_stdio() {
+            Ok(p) => {
+                if std::env::var("TERM_PROGRAM").as_deref() == Ok("vscode") {
+                    Picker::halfblocks()
+                } else {
+                    p
+                }
+            }
+            Err(_) => Picker::halfblocks(),
+        };
+
         let tx_img = tx.clone();
         tokio::task::spawn_blocking(move || {
-            let result = encode_splash_image(term_size);
+            let result = encode_splash_image(picker, term_size);
             match result {
                 Ok((protocol, size)) => {
                     let _ = tx_img.blocking_send(AppMsg::SplashImage(Some(protocol), Some(size)));
@@ -352,19 +363,9 @@ impl App {
 }
 
 fn encode_splash_image(
+    picker: Picker,
     term_size: Size,
 ) -> Result<(Protocol, Size), Box<dyn std::error::Error + Send + Sync>> {
-    let picker = match Picker::from_query_stdio() {
-        Ok(p) => {
-            if std::env::var("TERM_PROGRAM").as_deref() == Ok("vscode") {
-                Picker::halfblocks()
-            } else {
-                p
-            }
-        }
-        Err(_) => Picker::halfblocks(),
-    };
-
     let dyn_img = image::load_from_memory(include_bytes!("../../data/splash-screen-image.jpg"))?;
     let font_size = picker.font_size();
 
