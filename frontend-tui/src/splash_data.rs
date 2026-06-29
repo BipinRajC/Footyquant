@@ -54,10 +54,12 @@ pub fn next_match_query() -> &'static str {
 pub struct AliveTeamRow {
     pub home_team: String,
     pub away_team: String,
+    pub result_1x2: Option<String>,
+    pub stage: Option<String>,
 }
 
 pub fn alive_teams_query() -> &'static str {
-    "is_played=eq.false&select=home_team,away_team"
+    "select=home_team,away_team,result_1x2,stage"
 }
 
 pub const WC_FACTS: &[&str] = &[

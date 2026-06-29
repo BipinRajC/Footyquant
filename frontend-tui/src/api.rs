@@ -152,21 +152,40 @@ impl SupabaseClient {
             )
             .await?;
 
-        let mut teams: Vec<String> = Vec::new();
+        let mut eliminated: Vec<String> = Vec::new();
+        let mut all_teams: Vec<String> = Vec::new();
         for row in rows {
-            for team in [row.home_team, row.away_team] {
-                if team.contains('/')
-                    || team.starts_with("Winner")
-                    || team.starts_with("Loser")
-                {
-                    continue;
+            let home = &row.home_team;
+            let away = &row.away_team;
+            if home.contains('/')
+                || home.starts_with("Winner")
+                || home.starts_with("Loser")
+                || away.contains('/')
+                || away.starts_with("Winner")
+                || away.starts_with("Loser")
+            {
+                continue;
+            }
+            let is_ko = row.stage.as_deref() == Some("knockout");
+            if is_ko {
+                if let Some(ref result) = row.result_1x2 {
+                    match result.as_str() {
+                        "H" => eliminated.push(away.clone()),
+                        "A" => eliminated.push(home.clone()),
+                        _ => {}
+                    }
                 }
-                if !teams.contains(&team) {
-                    teams.push(team);
+            }
+            for team in [home.clone(), away.clone()] {
+                if !all_teams.contains(&team) {
+                    all_teams.push(team);
                 }
             }
         }
-        teams.sort();
-        Ok(teams)
+        let alive: Vec<String> = all_teams
+            .into_iter()
+            .filter(|t| !eliminated.contains(t))
+            .collect();
+        Ok(alive)
     }
 }
