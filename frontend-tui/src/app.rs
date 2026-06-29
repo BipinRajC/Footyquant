@@ -25,7 +25,6 @@ enum AppMsg {
     ModelParams(ModelParams),
     FeatureView(FeatureView),
     Error(String),
-    SplashImage(Option<Protocol>, Option<Size>),
     SplashNextMatch(Option<NextMatch>),
     SplashAliveTeams(Vec<TeamInfo>),
 }
@@ -83,19 +82,22 @@ impl App {
     pub async fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let terminal = ratatui::init();
 
+        self.load_splash_image(&terminal)?;
+
         let (msg_tx, msg_rx) = mpsc::channel::<AppMsg>(32);
         self.msg_tx = Some(msg_tx.clone());
 
-        self.spawn_splash_tasks(&terminal, msg_tx);
+        self.spawn_splash_tasks(msg_tx);
 
         let result = self.run_loop(terminal, msg_rx).await;
         ratatui::restore();
         result
     }
 
-    fn spawn_splash_tasks(&self, terminal: &DefaultTerminal, tx: mpsc::Sender<AppMsg>) {
-        let term_size = terminal.size().unwrap_or(Size::new(80, 24));
-
+    fn load_splash_image(
+        &mut self,
+        terminal: &DefaultTerminal,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let picker = match Picker::from_query_stdio() {
             Ok(p) => {
                 if std::env::var("TERM_PROGRAM").as_deref() == Ok("vscode") {
@@ -107,19 +109,33 @@ impl App {
             Err(_) => Picker::halfblocks(),
         };
 
-        let tx_img = tx.clone();
-        tokio::task::spawn_blocking(move || {
-            let result = encode_splash_image(picker, term_size);
-            match result {
-                Ok((protocol, size)) => {
-                    let _ = tx_img.blocking_send(AppMsg::SplashImage(Some(protocol), Some(size)));
-                }
-                Err(_) => {
-                    let _ = tx_img.blocking_send(AppMsg::SplashImage(None, None));
-                }
-            }
-        });
+        let dyn_img = image::load_from_memory(include_bytes!("../../data/splash-screen-image.jpg"))?;
+        let font_size = picker.font_size();
 
+        let term_area = terminal.size()?;
+        let max_cell_w = (term_area.width as f32 * 0.9).max(40.0) as u32;
+        let max_cell_h = (term_area.height as f32 * 0.55).max(20.0) as u32;
+
+        let natural_cell_w = dyn_img.width().div_ceil(font_size.width as u32);
+        let natural_cell_h = dyn_img.height().div_ceil(font_size.height as u32);
+
+        let scale = (max_cell_w as f32 / natural_cell_w as f32)
+            .min(max_cell_h as f32 / natural_cell_h as f32)
+            .min(1.0);
+
+        let target_w = (natural_cell_w as f32 * scale) as u16;
+        let target_h = (natural_cell_h as f32 * scale) as u16;
+
+        let size = Size::new(target_w, target_h);
+        let protocol = picker.new_protocol(dyn_img, size, Resize::Fit(None))?;
+
+        self.splash_image = Some(protocol);
+        self.splash_image_size = Some(size);
+        self.splash_image_loaded = true;
+        Ok(())
+    }
+
+    fn spawn_splash_tasks(&self, tx: mpsc::Sender<AppMsg>) {
         let tx_nm = tx.clone();
         tokio::spawn(async move {
             let api = SupabaseClient::new();
@@ -317,13 +333,6 @@ impl App {
                 self.error = Some(e);
                 self.loading = false;
             }
-            AppMsg::SplashImage(protocol, size) => {
-                if let (Some(p), Some(s)) = (protocol, size) {
-                    self.splash_image = Some(p);
-                    self.splash_image_size = Some(s);
-                }
-                self.splash_image_loaded = true;
-            }
             AppMsg::SplashNextMatch(nm) => {
                 self.next_match = nm;
                 self.splash_next_match_loaded = true;
@@ -360,29 +369,4 @@ impl App {
     pub fn current_fact(&self) -> &'static str {
         fact_for_index(self.splash_fact_index)
     }
-}
-
-fn encode_splash_image(
-    picker: Picker,
-    term_size: Size,
-) -> Result<(Protocol, Size), Box<dyn std::error::Error + Send + Sync>> {
-    let dyn_img = image::load_from_memory(include_bytes!("../../data/splash-screen-image.jpg"))?;
-    let font_size = picker.font_size();
-
-    let max_cell_w = (term_size.width as f32 * 0.9).max(40.0) as u32;
-    let max_cell_h = (term_size.height as f32 * 0.55).max(20.0) as u32;
-
-    let natural_cell_w = dyn_img.width().div_ceil(font_size.width as u32);
-    let natural_cell_h = dyn_img.height().div_ceil(font_size.height as u32);
-
-    let scale = (max_cell_w as f32 / natural_cell_w as f32)
-        .min(max_cell_h as f32 / natural_cell_h as f32)
-        .min(1.0);
-
-    let target_w = (natural_cell_w as f32 * scale) as u16;
-    let target_h = (natural_cell_h as f32 * scale) as u16;
-
-    let size = Size::new(target_w, target_h);
-    let protocol = picker.new_protocol(dyn_img, size, Resize::Fit(None))?;
-    Ok((protocol, size))
 }

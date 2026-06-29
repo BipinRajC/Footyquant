@@ -59,7 +59,13 @@ fn flag_map() -> &'static HashMap<&'static str, &'static str> {
 }
 
 pub fn flag_for(team: &str) -> &'static str {
-    flag_map().get(team).copied().unwrap_or("🏳️")
+    match flag_map().get(team) {
+        Some(flag) => flag,
+        None => {
+            eprintln!("[flags] WARNING: no flag mapping for team: {:?}", team);
+            "🏳️"
+        }
+    }
 }
 
 pub fn confederation_for(team: &str) -> &'static str {

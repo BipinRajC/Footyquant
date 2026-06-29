@@ -112,6 +112,11 @@ fn render_flags_zone(frame: &mut Frame, area: Rect, app: &App) {
         chunks[0],
     );
 
+    let viewport_width = app.splash_image_size.map(|s| s.width).unwrap_or(area.width);
+
+    let marquee_rect = centered_rect(viewport_width, 1, chunks[1]);
+    let viewport_chars = marquee_rect.width as usize;
+
     let units: Vec<String> = app
         .alive_teams
         .iter()
@@ -119,22 +124,57 @@ fn render_flags_zone(frame: &mut Frame, area: Rect, app: &App) {
         .collect();
 
     let total_units = units.len();
-    let unit_width: usize = units[0].chars().count();
-    let visible_units = (area.width as usize / unit_width).max(1);
+    if total_units == 0 {
+        return;
+    }
 
-    let scroll_frame = app.frame_count / 20;
-    let start_unit = scroll_frame % total_units;
+    let unit_char_count: Vec<usize> = units.iter().map(|u| u.chars().count()).collect();
+    let total_chars: usize = unit_char_count.iter().sum();
+    if total_chars == 0 {
+        return;
+    }
 
-    let mut row = String::new();
-    for i in 0..visible_units {
-        let unit = &units[(start_unit + i) % total_units];
-        row.push_str(unit);
+    let scroll_pos = (app.frame_count / 12) % total_chars;
+
+    let mut row = String::with_capacity(viewport_chars * 4);
+    let mut chars_emitted = 0usize;
+    let mut unit_idx = 0usize;
+    let mut char_idx = 0usize;
+
+    let unit_chars: Vec<Vec<char>> = units.iter().map(|u| u.chars().collect()).collect();
+
+    for _ in 0..scroll_pos {
+        char_idx += 1;
+        while unit_idx < total_units && char_idx >= unit_chars[unit_idx].len() {
+            unit_idx += 1;
+            char_idx = 0;
+        }
+    }
+    if unit_idx >= total_units {
+        unit_idx = 0;
+        char_idx = 0;
+    }
+
+    while chars_emitted < viewport_chars {
+        let remaining_in_unit = unit_chars[unit_idx].len() - char_idx;
+        let needed = viewport_chars - chars_emitted;
+        let take = remaining_in_unit.min(needed);
+
+        for c in &unit_chars[unit_idx][char_idx..char_idx + take] {
+            row.push(*c);
+        }
+        chars_emitted += take;
+        char_idx += take;
+
+        if char_idx >= unit_chars[unit_idx].len() {
+            unit_idx = (unit_idx + 1) % total_units;
+            char_idx = 0;
+        }
     }
 
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(row, Style::default())))
-            .alignment(Alignment::Center),
-        chunks[1],
+        Paragraph::new(Line::from(Span::styled(row, Style::default()))).alignment(Alignment::Left),
+        marquee_rect,
     );
 }
 
