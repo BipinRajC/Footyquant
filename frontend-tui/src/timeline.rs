@@ -149,6 +149,9 @@ pub fn merge_timeline(
 ) -> Vec<TimelineEntry> {
     let mut entries: Vec<TimelineEntry> = Vec::new();
 
+    let completed_ids: std::collections::HashSet<String> =
+        completed.iter().map(|r| r.match_id.clone()).collect();
+
     for row in completed {
         let pred = pred_lookup.get(&row.match_id).copied();
         entries.push(TimelineEntry::Completed {
@@ -173,6 +176,7 @@ pub fn merge_timeline(
 
     let mut upcoming: Vec<TimelineEntry> = predictions
         .into_iter()
+        .filter(|p| !completed_ids.contains(&p.match_id))
         .map(TimelineEntry::Upcoming)
         .collect();
     upcoming.sort_by(|a, b| a.match_date().cmp(b.match_date()));

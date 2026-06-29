@@ -74,7 +74,7 @@ fn render_content(frame: &mut Frame, area: Rect, app: &App) {
 
     let [list_area, spacer, preview_area] = Layout::vertical([
         Constraint::Min(5),
-        Constraint::Length(1),
+        Constraint::Length(2),
         Constraint::Length(14),
     ])
     .areas(area);
