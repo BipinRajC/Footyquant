@@ -28,7 +28,7 @@ impl TeamInfo {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct NextMatchRow {
+pub struct NextMatchRow {
     home_team: String,
     away_team: String,
     stage: String,
@@ -52,7 +52,8 @@ pub fn next_match_query() -> &'static str {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AliveTeamRow {
-    pub team: String,
+    pub home_team: String,
+    pub away_team: String,
 }
 
 pub fn alive_teams_query() -> &'static str {

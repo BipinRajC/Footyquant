@@ -1,7 +1,9 @@
 pub mod app;
 pub mod api;
 pub mod ascii_art;
+pub mod flags;
 pub mod models;
+pub mod splash_data;
 pub mod theme;
 pub mod views;
 pub mod widgets;
