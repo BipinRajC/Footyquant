@@ -2,7 +2,11 @@ use crate::api::SupabaseClient;
 use crate::models::{FeatureView, MatchPrediction, ModelParams};
 use crate::views;
 use crossterm::event::{Event, EventStream, KeyCode};
+use ratatui::layout::Size;
 use ratatui::DefaultTerminal;
+use ratatui_image::picker::Picker;
+use ratatui_image::protocol::Protocol;
+use ratatui_image::Resize;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
@@ -33,6 +37,8 @@ pub struct App {
     pub error: Option<String>,
     pub current_feature: Option<FeatureView>,
     pub should_quit: bool,
+    pub splash_image: Option<Protocol>,
+    pub splash_image_size: Option<Size>,
     msg_tx: Option<mpsc::Sender<AppMsg>>,
 }
 
@@ -52,15 +58,69 @@ impl App {
             error: None,
             current_feature: None,
             should_quit: false,
+            splash_image: None,
+            splash_image_size: None,
             msg_tx: None,
         })
     }
 
     pub async fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let terminal = ratatui::init();
+        self.load_splash_image(&terminal)?;
         let result = self.run_loop(terminal).await;
         ratatui::restore();
         result
+    }
+
+    fn load_splash_image(
+        &mut self,
+        terminal: &DefaultTerminal,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let picker = match Picker::from_query_stdio() {
+            Ok(p) => {
+                let proto = p.protocol_type();
+                let _ = std::fs::write(
+                    "/tmp/footyquant-splash-debug.log",
+                    format!("Detected protocol: {:?}\nTERM_PROGRAM: {:?}\n", proto, std::env::var("TERM_PROGRAM")),
+                );
+                if std::env::var("TERM_PROGRAM").as_deref() == Ok("vscode") {
+                    Picker::halfblocks()
+                } else {
+                    p
+                }
+            }
+            Err(e) => {
+                let _ = std::fs::write(
+                    "/tmp/footyquant-splash-debug.log",
+                    format!("from_query_stdio failed: {}\nFalling back to halfblocks\n", e),
+                );
+                Picker::halfblocks()
+            }
+        };
+
+        let dyn_img = image::load_from_memory(include_bytes!("../../data/splash-screen-image.jpg"))?;
+        let font_size = picker.font_size();
+
+        let term_area = terminal.size()?;
+        let max_cell_w = (term_area.width as f32 * 0.9).max(40.0) as u32;
+        let max_cell_h = (term_area.height as f32 * 0.65).max(20.0) as u32;
+
+        let natural_cell_w = dyn_img.width().div_ceil(font_size.width as u32);
+        let natural_cell_h = dyn_img.height().div_ceil(font_size.height as u32);
+
+        let scale = (max_cell_w as f32 / natural_cell_w as f32)
+            .min(max_cell_h as f32 / natural_cell_h as f32)
+            .min(1.0);
+
+        let target_w = (natural_cell_w as f32 * scale) as u16;
+        let target_h = (natural_cell_h as f32 * scale) as u16;
+
+        let size = Size::new(target_w, target_h);
+        let protocol = picker.new_protocol(dyn_img, size, Resize::Fit(None))?;
+
+        self.splash_image = Some(protocol);
+        self.splash_image_size = Some(size);
+        Ok(())
     }
 
     async fn run_loop(
@@ -106,6 +166,11 @@ impl App {
             match key.code {
                 KeyCode::Char('q') | KeyCode::Char('Q') => {
                     self.should_quit = true;
+                }
+                _ if self.view == View::Splash => {
+                    self.view = View::MatchList;
+                    self.loading = true;
+                    self.fetch_data();
                 }
                 KeyCode::Esc => {
                     if self.view == View::MatchDetail || self.view == View::ModelStats {

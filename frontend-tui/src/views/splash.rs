@@ -1,70 +1,92 @@
 use crate::app::App;
-use crate::ascii_art;
 use crate::theme;
-use ratatui::layout::Alignment;
+use ratatui::layout::{Alignment, Rect};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
+use ratatui_image::Image;
 
 pub fn render(frame: &mut Frame, app: &App) {
     let area = frame.area();
     let frame_num = app.frame_count;
 
-    let progress = (frame_num as f32 / 180.0).min(1.0);
+    if let (Some(image), Some(size)) = (&app.splash_image, app.splash_image_size) {
+        let image_rect = centered_rect(size.width, size.height, area);
+        frame.render_widget(Image::new(image), image_rect);
 
-    let mut lines: Vec<Line> = Vec::new();
-
-    let blank_lines = ((1.0 - progress) * 8.0) as usize;
-    for _ in 0..blank_lines {
-        lines.push(Line::raw(""));
+        let text_area = text_area_below(image_rect, area);
+        render_text(frame, text_area, frame_num);
+    } else {
+        render_fallback(frame, area, frame_num);
     }
+}
 
-    if progress > 0.1 {
-        let trophy_lines: Vec<&str> = ascii_art::trophy().lines().collect();
-        let trophy_progress = ((progress - 0.1) / 0.4).min(1.0);
-        let visible_lines = (trophy_lines.len() as f32 * trophy_progress).ceil() as usize;
-        for line in trophy_lines.iter().take(visible_lines) {
-            lines.push(Line::from(Span::styled(line.to_string(), theme::brand())));
-        }
-    }
+fn render_text(frame: &mut Frame, area: Rect, frame_num: usize) {
+    let glow_color = pulse_color(frame_num);
 
-    if progress > 0.5 {
-        let title_progress = ((progress - 0.5) / 0.3).min(1.0);
-        if title_progress > 0.0 {
-            lines.push(Line::raw(""));
-            let title = "MATCHDAY";
-            let chars: Vec<char> = title.chars().collect();
-            let visible_chars = (chars.len() as f32 * title_progress).ceil() as usize;
-            lines.push(Line::from(Span::styled(
-                chars[..visible_chars].iter().collect::<String>(),
-                theme::brand(),
-            )));
-        }
-    }
-
-    if progress > 0.8 {
-        let sub_progress = ((progress - 0.8) / 0.2).min(1.0);
-        if sub_progress > 0.0 {
-            lines.push(Line::raw(""));
-            let subtitle = "FIFA World Cup 2026 · Prediction Terminal";
-            let chars: Vec<char> = subtitle.chars().collect();
-            let visible_chars = (chars.len() as f32 * sub_progress).ceil() as usize;
-            lines.push(Line::from(Span::styled(
-                chars[..visible_chars].iter().collect::<String>(),
-                theme::metadata(),
-            )));
-        }
-    }
-
-    if progress > 0.9 {
-        lines.push(Line::raw(""));
-        lines.push(Line::raw(""));
-        lines.push(Line::from(Span::styled(
-            "    \"Where every match tells a story\"",
-            theme::label_amber(),
-        )));
-    }
+    let lines = vec![
+        Line::raw(""),
+        Line::from(Span::styled(
+            "Prediction Simulator TUI",
+            Style::default().fg(glow_color).add_modifier(Modifier::BOLD),
+        )),
+        Line::raw(""),
+        Line::from(Span::styled(
+            "FIFA World Cup 2026 · Matchday Modeling",
+            theme::metadata(),
+        )),
+        Line::from(Span::styled(
+            "Press any key to continue",
+            theme::label_gray(),
+        )),
+    ];
 
     let para = Paragraph::new(lines).alignment(Alignment::Center);
     frame.render_widget(para, area);
+}
+
+fn render_fallback(frame: &mut Frame, area: Rect, frame_num: usize) {
+    let glow_color = pulse_color(frame_num);
+
+    let lines = vec![
+        Line::from(Span::styled(
+            "MATCHDAY",
+            Style::default().fg(glow_color).add_modifier(Modifier::BOLD),
+        )),
+        Line::raw(""),
+        Line::from(Span::styled(
+            "FIFA World Cup 2026 · Prediction Simulator TUI",
+            theme::metadata(),
+        )),
+        Line::raw(""),
+        Line::from(Span::styled("Loading splash image...", theme::label_gray())),
+    ];
+
+    let para = Paragraph::new(lines).alignment(Alignment::Center);
+    frame.render_widget(para, area);
+}
+
+fn pulse_color(frame_num: usize) -> Color {
+    let pulse = (frame_num % 90) as f32 / 90.0;
+    let intensity = (pulse * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+    if intensity > 0.66 {
+        theme::AMBER
+    } else if intensity > 0.33 {
+        Color::Indexed(208)
+    } else {
+        Color::Indexed(220)
+    }
+}
+
+fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    Rect::new(x, y, width.min(area.width), height.min(area.height))
+}
+
+fn text_area_below(image_rect: Rect, area: Rect) -> Rect {
+    let start_y = (image_rect.y + image_rect.height + 2).min(area.height.saturating_sub(6));
+    let height = area.height.saturating_sub(start_y);
+    Rect::new(area.x, start_y, area.width, height)
 }
