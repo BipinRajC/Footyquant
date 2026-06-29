@@ -1,5 +1,6 @@
 use crate::api::SupabaseClient;
 use crate::models::{FeatureView, MatchPrediction, ModelParams};
+use crate::splash_data::{fact_for_index, NextMatch, TeamInfo, WC_FACTS};
 use crate::views;
 use crossterm::event::{Event, EventStream, KeyCode};
 use ratatui::layout::Size;
@@ -24,6 +25,9 @@ enum AppMsg {
     ModelParams(ModelParams),
     FeatureView(FeatureView),
     Error(String),
+    SplashImage(Option<Protocol>, Option<Size>),
+    SplashNextMatch(Option<NextMatch>),
+    SplashAliveTeams(Vec<TeamInfo>),
 }
 
 pub struct App {
@@ -39,11 +43,17 @@ pub struct App {
     pub should_quit: bool,
     pub splash_image: Option<Protocol>,
     pub splash_image_size: Option<Size>,
+    pub next_match: Option<NextMatch>,
+    pub alive_teams: Vec<TeamInfo>,
+    pub splash_fact_index: usize,
+    pub splash_image_loaded: bool,
+    pub splash_next_match_loaded: bool,
+    pub splash_teams_loaded: bool,
     msg_tx: Option<mpsc::Sender<AppMsg>>,
 }
 
 const FRAMES_PER_SECOND: f32 = 30.0;
-const SPLASH_DURATION_FRAMES: usize = 180;
+const FACT_ROTATION_FRAMES: usize = 90;
 
 impl App {
     pub async fn new() -> Result<Self, Box<dyn std::error::Error>> {
@@ -60,79 +70,77 @@ impl App {
             should_quit: false,
             splash_image: None,
             splash_image_size: None,
+            next_match: None,
+            alive_teams: Vec::new(),
+            splash_fact_index: 0,
+            splash_image_loaded: false,
+            splash_next_match_loaded: false,
+            splash_teams_loaded: false,
             msg_tx: None,
         })
     }
 
     pub async fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let terminal = ratatui::init();
-        self.load_splash_image(&terminal)?;
-        let result = self.run_loop(terminal).await;
+
+        let (msg_tx, msg_rx) = mpsc::channel::<AppMsg>(32);
+        self.msg_tx = Some(msg_tx.clone());
+
+        self.spawn_splash_tasks(&terminal, msg_tx);
+
+        let result = self.run_loop(terminal, msg_rx).await;
         ratatui::restore();
         result
     }
 
-    fn load_splash_image(
-        &mut self,
-        terminal: &DefaultTerminal,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let picker = match Picker::from_query_stdio() {
-            Ok(p) => {
-                let proto = p.protocol_type();
-                let _ = std::fs::write(
-                    "/tmp/footyquant-splash-debug.log",
-                    format!("Detected protocol: {:?}\nTERM_PROGRAM: {:?}\n", proto, std::env::var("TERM_PROGRAM")),
-                );
-                if std::env::var("TERM_PROGRAM").as_deref() == Ok("vscode") {
-                    Picker::halfblocks()
-                } else {
-                    p
+    fn spawn_splash_tasks(&self, terminal: &DefaultTerminal, tx: mpsc::Sender<AppMsg>) {
+        let term_size = terminal.size().unwrap_or(Size::new(80, 24));
+
+        let tx_img = tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = encode_splash_image(term_size);
+            match result {
+                Ok((protocol, size)) => {
+                    let _ = tx_img.blocking_send(AppMsg::SplashImage(Some(protocol), Some(size)));
+                }
+                Err(_) => {
+                    let _ = tx_img.blocking_send(AppMsg::SplashImage(None, None));
                 }
             }
-            Err(e) => {
-                let _ = std::fs::write(
-                    "/tmp/footyquant-splash-debug.log",
-                    format!("from_query_stdio failed: {}\nFalling back to halfblocks\n", e),
-                );
-                Picker::halfblocks()
-            }
-        };
+        });
 
-        let dyn_img = image::load_from_memory(include_bytes!("../../data/splash-screen-image.jpg"))?;
-        let font_size = picker.font_size();
+        let tx_nm = tx.clone();
+        tokio::spawn(async move {
+            let api = SupabaseClient::new();
+            let result = api.fetch_next_match().await;
+            let msg = match result {
+                Ok(nm) => AppMsg::SplashNextMatch(Some(nm)),
+                Err(_) => AppMsg::SplashNextMatch(None),
+            };
+            let _ = tx_nm.send(msg).await;
+        });
 
-        let term_area = terminal.size()?;
-        let max_cell_w = (term_area.width as f32 * 0.9).max(40.0) as u32;
-        let max_cell_h = (term_area.height as f32 * 0.65).max(20.0) as u32;
-
-        let natural_cell_w = dyn_img.width().div_ceil(font_size.width as u32);
-        let natural_cell_h = dyn_img.height().div_ceil(font_size.height as u32);
-
-        let scale = (max_cell_w as f32 / natural_cell_w as f32)
-            .min(max_cell_h as f32 / natural_cell_h as f32)
-            .min(1.0);
-
-        let target_w = (natural_cell_w as f32 * scale) as u16;
-        let target_h = (natural_cell_h as f32 * scale) as u16;
-
-        let size = Size::new(target_w, target_h);
-        let protocol = picker.new_protocol(dyn_img, size, Resize::Fit(None))?;
-
-        self.splash_image = Some(protocol);
-        self.splash_image_size = Some(size);
-        Ok(())
+        let tx_at = tx.clone();
+        tokio::spawn(async move {
+            let api = SupabaseClient::new();
+            let result = api.fetch_alive_teams().await;
+            let teams = result
+                .unwrap_or_default()
+                .iter()
+                .map(|name| TeamInfo::from_name(name))
+                .collect();
+            let _ = tx_at.send(AppMsg::SplashAliveTeams(teams)).await;
+        });
     }
 
     async fn run_loop(
         &mut self,
         mut terminal: DefaultTerminal,
+        mut msg_rx: mpsc::Receiver<AppMsg>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let period = Duration::from_secs_f32(1.0 / FRAMES_PER_SECOND);
         let mut interval = tokio::time::interval(period);
         let mut events = EventStream::new();
-        let (msg_tx, mut msg_rx) = mpsc::channel::<AppMsg>(32);
-
-        self.msg_tx = Some(msg_tx.clone());
 
         while !self.should_quit {
             tokio::select! {
@@ -154,10 +162,11 @@ impl App {
     fn on_tick(&mut self) {
         self.frame_count += 1;
 
-        if self.view == View::Splash && self.frame_count >= SPLASH_DURATION_FRAMES {
-            self.view = View::MatchList;
-            self.loading = true;
-            self.fetch_data();
+        if self.view == View::Splash
+            && self.frame_count > 0
+            && self.frame_count % FACT_ROTATION_FRAMES == 0
+        {
+            self.splash_fact_index = (self.splash_fact_index + 1) % WC_FACTS.len();
         }
     }
 
@@ -297,10 +306,82 @@ impl App {
                 self.error = Some(e);
                 self.loading = false;
             }
+            AppMsg::SplashImage(protocol, size) => {
+                if let (Some(p), Some(s)) = (protocol, size) {
+                    self.splash_image = Some(p);
+                    self.splash_image_size = Some(s);
+                }
+                self.splash_image_loaded = true;
+            }
+            AppMsg::SplashNextMatch(nm) => {
+                self.next_match = nm;
+                self.splash_next_match_loaded = true;
+            }
+            AppMsg::SplashAliveTeams(teams) => {
+                self.alive_teams = teams;
+                self.splash_teams_loaded = true;
+            }
         }
     }
 
     pub fn current_prediction(&self) -> Option<&MatchPrediction> {
         self.predictions.get(self.selected_match)
     }
+
+    pub fn splash_progress(&self) -> u8 {
+        let mut done = 0u8;
+        if self.splash_image_loaded {
+            done += 1;
+        }
+        if self.splash_next_match_loaded {
+            done += 1;
+        }
+        if self.splash_teams_loaded {
+            done += 1;
+        }
+        done
+    }
+
+    pub fn splash_all_loaded(&self) -> bool {
+        self.splash_progress() == 3
+    }
+
+    pub fn current_fact(&self) -> &'static str {
+        fact_for_index(self.splash_fact_index)
+    }
+}
+
+fn encode_splash_image(
+    term_size: Size,
+) -> Result<(Protocol, Size), Box<dyn std::error::Error + Send + Sync>> {
+    let picker = match Picker::from_query_stdio() {
+        Ok(p) => {
+            if std::env::var("TERM_PROGRAM").as_deref() == Ok("vscode") {
+                Picker::halfblocks()
+            } else {
+                p
+            }
+        }
+        Err(_) => Picker::halfblocks(),
+    };
+
+    let dyn_img = image::load_from_memory(include_bytes!("../../data/splash-screen-image.jpg"))?;
+    let font_size = picker.font_size();
+
+    let max_cell_w = (term_size.width as f32 * 0.9).max(40.0) as u32;
+    let max_cell_h = (term_size.height as f32 * 0.55).max(20.0) as u32;
+
+    let natural_cell_w = dyn_img.width().div_ceil(font_size.width as u32);
+    let natural_cell_h = dyn_img.height().div_ceil(font_size.height as u32);
+
+    let scale = (max_cell_w as f32 / natural_cell_w as f32)
+        .min(max_cell_h as f32 / natural_cell_h as f32)
+        .min(1.0);
+
+    let target_w = (natural_cell_w as f32 * scale) as u16;
+    let target_h = (natural_cell_h as f32 * scale) as u16;
+
+    let size = Size::new(target_w, target_h);
+    let protocol = picker.new_protocol(dyn_img, size, Resize::Fit(None))?;
+    Ok((protocol, size))
 }
