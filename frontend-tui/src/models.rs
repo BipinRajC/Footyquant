@@ -34,6 +34,10 @@ pub struct MatchPrediction {
     pub dc_top_scorelines: Option<serde_json::Value>,
     pub narrative: String,
     pub model_version: String,
+    pub home_qualify_prob: Option<f64>,
+    pub away_qualify_prob: Option<f64>,
+    pub extra_time_prob: Option<f64>,
+    pub penalties_prob: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -91,14 +95,41 @@ impl MatchPrediction {
         }
     }
 
+    pub fn qual_favorite_label(&self) -> &str {
+        let hq = self.home_qualify_prob.unwrap_or(0.5);
+        let aq = self.away_qualify_prob.unwrap_or(0.5);
+        if hq >= aq {
+            "home"
+        } else {
+            "away"
+        }
+    }
+
+    pub fn qual_max_prob(&self) -> f64 {
+        let hq = self.home_qualify_prob.unwrap_or(0.5);
+        let aq = self.away_qualify_prob.unwrap_or(0.5);
+        hq.max(aq)
+    }
+
+    pub fn qual_top_two_gap(&self) -> f64 {
+        let hq = self.home_qualify_prob.unwrap_or(0.5);
+        let aq = self.away_qualify_prob.unwrap_or(0.5);
+        (hq - aq).abs()
+    }
+
     pub fn character_label(&self) -> &'static str {
-        if self.max_prob() > 0.65 {
+        let max = if self.stage == "knockout" {
+            self.qual_max_prob()
+        } else {
+            self.max_prob()
+        };
+        if max > 0.75 {
             "CLEAR FAVORITE"
         } else if self.ci_width_1x2() > 0.20 {
             "VOLATILE"
         } else if self.confidence_1x2 == "HIGH" {
             "HIGH CONFIDENCE"
-        } else if self.top_two_gap() < 0.10 {
+        } else if self.qual_top_two_gap() < 0.10 {
             "EVEN MATCH"
         } else if self.under_25_prob > 0.70 && self.btts_no_prob > 0.60 {
             "LOW SCORING"
@@ -112,25 +143,57 @@ impl MatchPrediction {
     pub fn headline(&self) -> String {
         let home = &self.home_team;
         let away = &self.away_team;
-        let fav = self.favorite_label();
-        let max = self.max_prob();
-        let total_xg = self.dc_home_xg + self.dc_away_xg;
 
-        if self.top_two_gap() < 0.10 && self.under_25_prob > 0.60 {
-            format!("Everything points toward a tense, tactical stalemate.")
-        } else if max > 0.70 {
+        if self.stage == "knockout" {
+            let fav = self.qual_favorite_label();
+            let max = self.qual_max_prob();
+            let gap = self.qual_top_two_gap();
+            let et = self.extra_time_prob.unwrap_or(0.0);
             let fav_name = if fav == "home" { home } else { away };
-            format!("{} are expected to dominate.", fav_name)
-        } else if max > 0.55 && total_xg > 2.5 {
-            let fav_name = if fav == "home" { home } else { away };
-            format!("{} are expected to control this one comfortably.", fav_name)
-        } else if self.ci_width_1x2() > 0.20 {
-            format!("This one could go either way — expect the unexpected.")
-        } else if self.top_two_gap() < 0.10 {
-            format!("A closely fought contest where margins will decide it.")
+            let opp_name = if fav == "home" { away } else { home };
+            if max > 0.80 {
+                format!(
+                    "{} are heavy favourites to qualify past {}.",
+                    fav_name, opp_name
+                )
+            } else if max > 0.65 {
+                format!(
+                    "{} hold a clear path to qualification against {}.",
+                    fav_name, opp_name
+                )
+            } else if gap < 0.10 {
+                format!(
+                    "A knockout toss-up — {} and {} are evenly matched.",
+                    home, away
+                )
+            } else if et > 0.35 {
+                format!("This knockout tie is expected to go the distance — extra time looms.")
+            } else {
+                format!(
+                    "{} have the edge to qualify but {} will fight.",
+                    fav_name, opp_name
+                )
+            }
         } else {
-            let fav_name = if fav == "home" { home } else { away };
-            format!("{} hold the edge but nothing is guaranteed.", fav_name)
+            let fav = self.favorite_label();
+            let max = self.max_prob();
+            let total_xg = self.dc_home_xg + self.dc_away_xg;
+            if self.top_two_gap() < 0.10 && self.under_25_prob > 0.60 {
+                format!("Everything points toward a tense, tactical stalemate.")
+            } else if max > 0.70 {
+                let fav_name = if fav == "home" { home } else { away };
+                format!("{} are expected to dominate.", fav_name)
+            } else if max > 0.55 && total_xg > 2.5 {
+                let fav_name = if fav == "home" { home } else { away };
+                format!("{} are expected to control this one comfortably.", fav_name)
+            } else if self.ci_width_1x2() > 0.20 {
+                format!("This one could go either way — expect the unexpected.")
+            } else if self.top_two_gap() < 0.10 {
+                format!("A closely fought contest where margins will decide it.")
+            } else {
+                let fav_name = if fav == "home" { home } else { away };
+                format!("{} hold the edge but nothing is guaranteed.", fav_name)
+            }
         }
     }
 }
