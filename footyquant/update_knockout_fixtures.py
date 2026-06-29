@@ -13,7 +13,7 @@ def get_supabase():
     url = os.environ.get("SUPABASE_URL", "")
     key = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_KEY", "")
     if not url or not key:
-        dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
+        dotenv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
         if os.path.exists(dotenv_path):
             with open(dotenv_path) as f:
                 for line in f:
