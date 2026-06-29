@@ -53,6 +53,8 @@ pub struct App {
     pub splash_image_loaded: bool,
     pub splash_next_match_loaded: bool,
     pub splash_teams_loaded: bool,
+    pub results_scroll: usize,
+    pub upcoming_scroll: usize,
     msg_tx: Option<mpsc::Sender<AppMsg>>,
 }
 
@@ -82,6 +84,8 @@ impl App {
             splash_image_loaded: false,
             splash_next_match_loaded: false,
             splash_teams_loaded: false,
+            results_scroll: 0,
+            upcoming_scroll: 0,
             msg_tx: None,
         })
     }
@@ -202,6 +206,15 @@ impl App {
         {
             self.splash_fact_index = (self.splash_fact_index + 1) % WC_FACTS.len();
         }
+
+        if self.view == View::MatchList && !self.timeline.is_empty() {
+            let completed_count = self.timeline.iter().filter(|e| e.is_completed()).count();
+            if self.selected_match < completed_count {
+                self.upcoming_scroll = 0;
+            } else {
+                self.results_scroll = 0;
+            }
+        }
     }
 
     fn handle_event(&mut self, event: Event) {
@@ -238,6 +251,7 @@ impl App {
                         if !self.timeline.is_empty() {
                             self.selected_match =
                                 (self.selected_match + 1).min(self.timeline.len() - 1);
+                            self.fetch_feature_for_selected();
                         }
                     }
                     View::MatchDetail => {
@@ -252,6 +266,7 @@ impl App {
                     View::MatchList => {
                         if self.selected_match > 0 {
                             self.selected_match -= 1;
+                            self.fetch_feature_for_selected();
                         }
                     }
                     View::MatchDetail => {
@@ -325,6 +340,26 @@ impl App {
                     }
                 }
             });
+        }
+    }
+
+    fn fetch_feature_for_selected(&self) {
+        if let Some(TimelineEntry::Upcoming(pred)) = self.timeline.get(self.selected_match) {
+            let match_id = pred.match_id.clone();
+            if let Some(tx) = &self.msg_tx {
+                let tx = tx.clone();
+                tokio::spawn(async move {
+                    let api = SupabaseClient::new();
+                    match api.fetch_feature_view(&match_id).await {
+                        Ok(feature) => {
+                            let _ = tx.send(AppMsg::FeatureView(feature)).await;
+                        }
+                        Err(e) => {
+                            let _ = tx.send(AppMsg::Error(e)).await;
+                        }
+                    }
+                });
+            }
         }
     }
 
