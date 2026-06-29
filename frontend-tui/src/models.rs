@@ -196,6 +196,53 @@ impl MatchPrediction {
             }
         }
     }
+
+    pub fn quick_summary(&self) -> String {
+        let home = &self.home_team;
+        let away = &self.away_team;
+        let mut parts: Vec<String> = Vec::new();
+
+        parts.push(self.headline());
+
+        let notable = if self.under_25_prob > 0.65 {
+            format!(
+                "The model expects a low-scoring affair ({}% under 2.5).",
+                (self.under_25_prob * 100.0) as u32
+            )
+        } else if self.over_25_prob > 0.60 {
+            format!(
+                "Goals are expected ({}% over 2.5).",
+                (self.over_25_prob * 100.0) as u32
+            )
+        } else if self.btts_yes_prob > 0.55 {
+            format!(
+                "Both teams are likely to score ({}%).",
+                (self.btts_yes_prob * 100.0) as u32
+            )
+        } else if self.stage == "knockout" && self.extra_time_prob.unwrap_or(0.0) > 0.30 {
+            format!(
+                "Extra time is a real possibility ({}%).",
+                (self.extra_time_prob.unwrap_or(0.0) * 100.0) as u32
+            )
+        } else if self.ci_width_1x2() > 0.20 {
+            "This match is volatile — outcomes are wide open.".to_string()
+        } else {
+            format!(
+                "Expected goals: {:.1} \u{2014} {:.1}.",
+                self.dc_home_xg, self.dc_away_xg
+            )
+        };
+        parts.push(notable);
+
+        let conf = match self.confidence_1x2.as_str() {
+            "HIGH" => "High confidence prediction.",
+            "MEDIUM" => "Medium confidence.",
+            _ => "Low confidence — proceed with caution.",
+        };
+        parts.push(conf.to_string());
+
+        parts.join(" ")
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
