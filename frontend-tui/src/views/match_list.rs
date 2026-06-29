@@ -93,10 +93,55 @@ fn to_ist(match_date: &str) -> String {
         Some((h, m)) => (h.parse::<u32>().unwrap_or(0), m.parse::<u32>().unwrap_or(0)),
         None => return "??:??".to_string(),
     };
-    let total_mins = h * 60 + m + 330;
-    let ist_h = (total_mins / 60) % 24;
-    let ist_m = total_mins % 60;
-    format!("{} {:02}:{:02} IST", date_part, ist_h, ist_m)
+    let total_mins = h * 60 + m + 570;
+    let days_advance = total_mins / 1440;
+    let day_mins = total_mins % 1440;
+    let ist_h = day_mins / 60;
+    let ist_m = day_mins % 60;
+
+    let parts: Vec<&str> = date_part.split('-').collect();
+    if parts.len() == 3 {
+        let y: u32 = parts[0].parse().unwrap_or(0);
+        let mo: u32 = parts[1].parse().unwrap_or(0);
+        let d: u32 = parts[2].parse().unwrap_or(0) + days_advance;
+        let (y, mo, d) = normalize_date(y, mo, d);
+        format!("{:04}-{:02}-{:02} {:02}:{:02} IST", y, mo, d, ist_h, ist_m)
+    } else {
+        format!("{} {:02}:{:02} IST", date_part, ist_h, ist_m)
+    }
+}
+
+fn normalize_date(y: u32, mo: u32, d: u32) -> (u32, u32, u32) {
+    let days_in_month = |y: u32, m: u32| -> u32 {
+        match m {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 => {
+                if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) {
+                    29
+                } else {
+                    28
+                }
+            }
+            _ => 30,
+        }
+    };
+    let mut y = y;
+    let mut mo = mo;
+    let mut d = d;
+    loop {
+        let dim = days_in_month(y, mo);
+        if d <= dim {
+            break;
+        }
+        d -= dim;
+        mo += 1;
+        if mo > 12 {
+            mo = 1;
+            y += 1;
+        }
+    }
+    (y, mo, d)
 }
 
 fn render_fixture_list(frame: &mut Frame, area: Rect, app: &App) {
