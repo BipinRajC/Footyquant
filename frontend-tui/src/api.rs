@@ -1,5 +1,6 @@
 use crate::models::{FeatureView, MatchPrediction, ModelParams};
 use crate::splash_data::{AliveTeamRow, NextMatch, NextMatchRow};
+use crate::timeline::CompletedMatchRow;
 use reqwest::Client;
 
 pub struct SupabaseClient {
@@ -184,5 +185,13 @@ impl SupabaseClient {
             .filter(|t| !eliminated.contains(t))
             .collect();
         Ok(alive)
+    }
+
+    pub async fn fetch_completed_knockout(&self) -> Result<Vec<CompletedMatchRow>, String> {
+        self.fetch_table(
+            "clean_wc_fixtures",
+            "is_played=eq.true&is_knockout=eq.true&order=match_date.desc&select=match_id,match_date,home_team,away_team,stage,group_name,home_score,away_score,result_1x2",
+        )
+        .await
     }
 }

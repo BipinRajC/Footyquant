@@ -84,9 +84,9 @@ impl TimelineEntry {
                 pred_away_qual,
                 ..
             } => {
-                let hq = pred_home_qual?;
-                let aq = pred_away_qual?;
-                let predicted_home = hq >= aq;
+                let hq = pred_home_qual.as_ref()?;
+                let aq = pred_away_qual.as_ref()?;
+                let predicted_home = *hq >= *aq;
                 let actual_home = result_1x2 == "H";
                 Some(predicted_home == actual_home)
             }

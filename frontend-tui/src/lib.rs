@@ -5,5 +5,6 @@ pub mod flags;
 pub mod models;
 pub mod splash_data;
 pub mod theme;
+pub mod timeline;
 pub mod views;
 pub mod widgets;
