@@ -1,5 +1,4 @@
 use crate::app::App;
-use crate::ascii_art;
 use crate::splash_data::format_countdown;
 use crate::theme;
 use chrono::Utc;
@@ -15,20 +14,23 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     let chunks = Layout::vertical([
         Constraint::Fill(1),
-        Constraint::Length(4),
-        Constraint::Length(4),
         Constraint::Length(3),
-        Constraint::Length(2),
         Constraint::Length(1),
+        Constraint::Length(4),
+        Constraint::Length(2),
+        Constraint::Length(2),
+        Constraint::Length(2),
+        Constraint::Fill(1),
     ])
     .split(area);
 
     render_image_zone(frame, chunks[0], app);
     render_title_zone(frame, chunks[1], app);
-    render_next_match_zone(frame, chunks[2], app);
-    render_teams_zone(frame, chunks[3], app);
-    render_fact_zone(frame, chunks[4], app);
-    render_loading_zone(frame, chunks[5], app);
+    render_subtitle_zone(frame, chunks[2], app);
+    render_next_match_zone(frame, chunks[3], app);
+    render_flags_zone(frame, chunks[4], app);
+    render_fact_zone(frame, chunks[5], app);
+    render_loading_zone(frame, chunks[6], app);
 }
 
 fn render_image_zone(frame: &mut Frame, area: Rect, app: &App) {
@@ -36,7 +38,7 @@ fn render_image_zone(frame: &mut Frame, area: Rect, app: &App) {
         let image_rect = centered_rect(size.width, size.height, area);
         frame.render_widget(Image::new(image), image_rect);
     } else if !app.splash_image_loaded {
-        let glow = pulse_color(app.frame_count);
+        let glow = slow_pulse(app.frame_count);
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(glow));
@@ -46,233 +48,121 @@ fn render_image_zone(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_title_zone(frame: &mut Frame, area: Rect, app: &App) {
-    let glow = pulse_color(app.frame_count);
-    let sep1 = double_separator(area.width);
-    let sep2 = double_separator(area.width);
+    let glow = slow_pulse(app.frame_count);
+    let line = Line::from(Span::styled(
+        "MATCHDAY",
+        Style::default().fg(glow).add_modifier(Modifier::BOLD),
+    ));
+    frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
+}
 
-    let lines = vec![
-        Line::from(Span::styled(sep1, Style::default().fg(theme::AMBER))),
-        Line::from(Span::styled(
-            format!("{}  MATCHDAY  {}", theme::BRAND_GLYPH, theme::BRAND_GLYPH),
-            Style::default().fg(glow).add_modifier(Modifier::BOLD),
-        )),
-        Line::from(Span::styled(sep2, Style::default().fg(theme::AMBER))),
-        Line::from(Span::styled(
-            "FIFA World Cup 2026 \u{00b7} Prediction Simulator",
-            theme::metadata(),
-        )),
-    ];
-
-    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
+fn render_subtitle_zone(frame: &mut Frame, area: Rect, _app: &App) {
+    let line = Line::from(Span::styled(
+        "FIFA World Cup 2026 \u{00b7} Prediction Terminal",
+        theme::metadata(),
+    ));
+    frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }
 
 fn render_next_match_zone(frame: &mut Frame, area: Rect, app: &App) {
-    let sep = short_double_separator(area.width);
-
-    let mut lines = vec![Line::from(Span::styled(
-        sep,
-        Style::default().fg(theme::AMBER),
-    ))];
-
-    if let Some(nm) = &app.next_match {
-        lines.push(Line::from(Span::styled(
-            "NEXT MATCH",
-            theme::section_header(),
-        )));
-        lines.push(Line::from(Span::styled(
-            format!("{} v {} \u{00b7} {}", nm.home_team, nm.away_team, nm.stage),
-            theme::team_name(),
-        )));
+    let lines = if let Some(nm) = &app.next_match {
         let now = Utc::now();
-        let secs_left = nm.match_date.signed_duration_since(now).num_seconds();
         let countdown = format_countdown(nm.match_date, now);
-        let color = urgency_color(app.frame_count, secs_left);
-        lines.push(Line::from(Span::styled(
-            countdown,
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        )));
+        vec![
+            Line::raw(""),
+            Line::from(Span::styled(
+                format!("{} v {}", nm.home_team, nm.away_team),
+                Style::default()
+                    .fg(theme::WHITE)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(countdown, theme::label_amber())),
+        ]
     } else if app.splash_next_match_loaded {
-        lines.push(Line::from(Span::styled(
-            "NEXT MATCH",
-            theme::section_header(),
-        )));
-        lines.push(Line::from(Span::styled(
-            "Next match unavailable",
-            theme::label_gray(),
-        )));
-        lines.push(Line::raw(""));
+        vec![
+            Line::raw(""),
+            Line::from(Span::styled("Next match unavailable", theme::label_gray())),
+            Line::raw(""),
+        ]
     } else {
-        lines.push(Line::from(Span::styled(
-            "NEXT MATCH",
-            theme::section_header(),
-        )));
-        lines.push(Line::from(Span::styled(
-            "Loading next match...",
-            theme::label_gray(),
-        )));
-        lines.push(Line::raw(""));
-    }
+        vec![
+            Line::raw(""),
+            Line::from(Span::styled("Loading next match...", theme::label_gray())),
+            Line::raw(""),
+        ]
+    };
 
     frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
 }
 
-fn render_teams_zone(frame: &mut Frame, area: Rect, app: &App) {
-    let sep = short_double_separator(area.width);
-
-    let mut lines = vec![Line::from(Span::styled(
-        sep,
-        Style::default().fg(theme::AMBER),
-    ))];
-
-    if app.alive_teams.is_empty() && !app.splash_teams_loaded {
-        lines.push(Line::from(Span::styled(
-            "Loading teams...",
-            theme::label_gray(),
-        )));
-        lines.push(Line::raw(""));
-    } else if app.alive_teams.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "Team data unavailable",
-            theme::label_gray(),
-        )));
-        lines.push(Line::raw(""));
-    } else {
-        let count = app.alive_teams.len();
-        lines.push(Line::from(Span::styled(
-            format!("{} TEAMS STILL IN", count),
-            theme::section_header(),
-        )));
-        lines.push(Line::raw(""));
-    }
-
-    let chunks = Layout::vertical([Constraint::Length(2), Constraint::Length(1)]).split(area);
-
-    frame.render_widget(
-        Paragraph::new(lines).alignment(Alignment::Center),
-        chunks[0],
-    );
-
-    if !app.alive_teams.is_empty() {
-        render_flag_marquee(frame, chunks[1], &app.alive_teams, app.frame_count);
-    }
-}
-
-fn render_flag_marquee(
-    frame: &mut Frame,
-    area: Rect,
-    teams: &[crate::splash_data::TeamInfo],
-    frame_count: usize,
-) {
-    let flags: String = teams.iter().map(|t| format!("{} ", t.flag)).collect();
-    let doubled = format!("{}  {}", flags, flags);
-    let chars: Vec<char> = doubled.chars().collect();
-    let total = chars.len();
-    if total == 0 {
+fn render_flags_zone(frame: &mut Frame, area: Rect, app: &App) {
+    if app.alive_teams.is_empty() {
         return;
     }
-    let offset = frame_count % total;
-    let width = area.width as usize;
-    let window: String = (0..width).map(|i| chars[(offset + i) % total]).collect();
 
-    frame.render_widget(Paragraph::new(window).alignment(Alignment::Left), area);
+    let count = 8.min(app.alive_teams.len());
+    let step = app.frame_count / 270;
+    let flags: Vec<String> = (0..count)
+        .map(|i| {
+            let idx = (i + step) % app.alive_teams.len();
+            app.alive_teams[idx].flag.to_string()
+        })
+        .collect();
+
+    let spacing = "   ";
+    let row = flags.join(spacing);
+    let line = Line::from(Span::styled(row, Style::default()));
+    frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }
 
 fn render_fact_zone(frame: &mut Frame, area: Rect, app: &App) {
-    let sep = short_double_separator(area.width);
-
-    let mut lines = vec![Line::from(Span::styled(
-        sep,
-        Style::default().fg(theme::AMBER),
-    ))];
-
-    let in_blank_gap = app.frame_count % 90 < 10;
-    if in_blank_gap {
-        lines.push(Line::raw(""));
+    let cycle = app.frame_count % 270;
+    let line = if cycle < 30 {
+        Line::raw("")
     } else {
-        lines.push(Line::from(Span::styled(
-            format!("\u{1f4a1} {}", app.current_fact()),
-            theme::label_gray(),
-        )));
-    }
-
-    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
+        Line::from(Span::styled(app.current_fact(), theme::label_gray()))
+    };
+    frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }
 
 fn render_loading_zone(frame: &mut Frame, area: Rect, app: &App) {
-    let progress = app.splash_progress();
     let all_loaded = app.splash_all_loaded();
-
-    let spinner = ascii_art::football_spinner(app.frame_count);
-    let bar_width = 30;
-    let prob = progress as f64 / 3.0;
-    let bar = theme::make_bar(prob, bar_width);
-
-    let bar_color = if all_loaded {
-        theme::GREEN
-    } else {
-        theme::AMBER
-    };
+    let dots = pulsing_dots(app.frame_count);
 
     let line = if all_loaded {
         Line::from(vec![
-            Span::styled(format!("{} ", spinner), Style::default().fg(theme::GREEN)),
-            Span::styled(bar, Style::default().fg(theme::GREEN)),
-            Span::styled(" Ready \u{2014} press any key", theme::label_gray()),
+            Span::styled(dots, Style::default().fg(theme::AMBER)),
+            Span::styled("  Ready \u{2014} Press any key", theme::label_gray()),
         ])
     } else {
         Line::from(vec![
-            Span::styled(format!("{} ", spinner), Style::default().fg(theme::AMBER)),
-            Span::styled(bar, Style::default().fg(bar_color)),
-            Span::styled(" Loading match data...", theme::label_gray()),
+            Span::styled(dots, Style::default().fg(theme::AMBER)),
+            Span::styled("  Initializing prediction engine...", theme::label_gray()),
         ])
     };
 
     frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }
 
-fn pulse_color(frame_num: usize) -> Color {
-    let pulse = (frame_num % 90) as f32 / 90.0;
+fn slow_pulse(frame_num: usize) -> Color {
+    let period = 180;
+    let pulse = (frame_num % period) as f32 / period as f32;
     let intensity = (pulse * std::f32::consts::TAU).sin() * 0.5 + 0.5;
-    if intensity > 0.66 {
+    if intensity > 0.5 {
         theme::AMBER
-    } else if intensity > 0.33 {
-        Color::Indexed(208)
     } else {
-        Color::Indexed(220)
+        Color::Indexed(130)
     }
 }
 
-fn urgency_color(frame_num: usize, secs_left: i64) -> Color {
-    if secs_left <= 0 {
-        return theme::GREEN;
+fn pulsing_dots(frame_num: usize) -> String {
+    let phase = (frame_num / 15) % 4;
+    match phase {
+        0 => "\u{00b7}  ".to_string(),
+        1 => "\u{00b7}\u{00b7} ".to_string(),
+        2 => "\u{00b7}\u{00b7}\u{00b7}".to_string(),
+        _ => "   ".to_string(),
     }
-    if secs_left <= 600 {
-        if frame_num % 2 == 0 {
-            theme::AMBER
-        } else {
-            theme::RED
-        }
-    } else if secs_left <= 3600 {
-        let pulse = (frame_num % 30) as f32 / 30.0;
-        let intensity = (pulse * std::f32::consts::TAU).sin() * 0.5 + 0.5;
-        if intensity > 0.5 {
-            theme::AMBER
-        } else {
-            theme::RED
-        }
-    } else {
-        theme::AMBER
-    }
-}
-
-fn double_separator(width: u16) -> String {
-    "\u{2550}".repeat(width as usize)
-}
-
-fn short_double_separator(width: u16) -> String {
-    let pad = 8.min(width as usize / 4);
-    let sep_len = width.saturating_sub((pad * 2) as u16) as usize;
-    format!("{}{}", " ".repeat(pad), "\u{2550}".repeat(sep_len))
 }
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
