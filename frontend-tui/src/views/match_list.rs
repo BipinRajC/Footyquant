@@ -72,8 +72,12 @@ fn render_content(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    let [list_area, preview_area] =
-        Layout::vertical([Constraint::Min(5), Constraint::Length(14)]).areas(area);
+    let [list_area, spacer, preview_area] = Layout::vertical([
+        Constraint::Min(5),
+        Constraint::Length(1),
+        Constraint::Length(14),
+    ])
+    .areas(area);
 
     render_fixture_list(frame, list_area, app);
     render_quick_look(frame, preview_area, app);
@@ -112,30 +116,22 @@ fn render_fixture_list(frame: &mut Frame, area: Rect, app: &App) {
     let has_completed = !completed.is_empty();
     let has_upcoming = !upcoming.is_empty();
 
-    let sections: Vec<Rect> = if has_completed && has_upcoming {
-        Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(area)
-            .to_vec()
-    } else {
-        vec![area]
-    };
+    if has_completed && has_upcoming {
+        let total = completed.len() + upcoming.len();
+        let min_h = 4u16;
+        let avail = area.height.saturating_sub(min_h * 2);
+        let comp_h = min_h + (avail * completed.len() as u16 / total as u16);
+        let upcom_h = area.height.saturating_sub(comp_h);
 
-    if has_completed {
-        let results_area = if has_upcoming {
-            sections[0]
-        } else {
-            sections[0]
-        };
+        let [results_area, upcoming_area] =
+            Layout::vertical([Constraint::Length(comp_h), Constraint::Length(upcom_h)]).areas(area);
+
         render_results_section(frame, results_area, &completed, app);
-    }
-
-    if has_upcoming {
-        let upcoming_area = if has_completed {
-            sections[1]
-        } else {
-            sections[0]
-        };
         render_upcoming_section(frame, upcoming_area, &upcoming, app);
+    } else if has_completed {
+        render_results_section(frame, area, &completed, app);
+    } else if has_upcoming {
+        render_upcoming_section(frame, area, &upcoming, app);
     }
 }
 

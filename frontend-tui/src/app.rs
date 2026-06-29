@@ -211,8 +211,14 @@ impl App {
             let completed_count = self.timeline.iter().filter(|e| e.is_completed()).count();
             if self.selected_match < completed_count {
                 self.upcoming_scroll = 0;
+                let idx_in_section = self.selected_match;
+                let target = if idx_in_section > 2 { idx_in_section - 2 } else { 0 };
+                self.results_scroll = target;
             } else {
                 self.results_scroll = 0;
+                let idx_in_section = self.selected_match - completed_count;
+                let target = if idx_in_section > 2 { idx_in_section - 2 } else { 0 };
+                self.upcoming_scroll = target;
             }
         }
     }
