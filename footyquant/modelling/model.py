@@ -1832,16 +1832,11 @@ def _sanitize_nan(d: dict) -> dict:
 
 
 def store_predictions(supabase, predictions: list[dict]):
-    """Store predictions, preserving predictions for already-played matches."""
-    upcoming_ids = [p["match_id"] for p in predictions]
-    for mid in upcoming_ids:
-        supabase.table("match_predictions").delete().eq("match_id", mid).execute()
+    """Upsert predictions — inserts new, updates existing by match_id."""
     for pred in predictions:
         clean_pred = _sanitize_nan(pred)
         supabase.table("match_predictions").upsert(clean_pred).execute()
-    print(
-        f"  Stored {len(predictions)} predictions (completed match predictions preserved)"
-    )
+    print(f"  Stored {len(predictions)} predictions")
 
 
 def store_model_params(
