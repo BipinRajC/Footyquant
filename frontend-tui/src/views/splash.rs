@@ -68,10 +68,10 @@ fn render_text(frame: &mut Frame, area: Rect, app: &App) {
             format!("{} Teams Still Alive", count),
             theme::label_gray(),
         )));
-        lines.push(Line::from(Span::styled(
-            flag_grid(&app.alive_teams, area.width),
-            Style::default(),
-        )));
+        let flags: Vec<&str> = app.alive_teams.iter().map(|t| t.flag).collect();
+        let viewport = app.splash_image_size.map(|s| s.width).unwrap_or(area.width);
+        let row = flag_carousel(&flags, app.frame_count, viewport);
+        lines.push(Line::from(Span::styled(row, Style::default())));
     }
 
     lines.push(Line::raw(""));
@@ -105,23 +105,25 @@ fn render_text(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
 }
 
-fn flag_grid(teams: &[crate::splash_data::TeamInfo], max_width: u16) -> String {
-    let flags: Vec<&str> = teams.iter().map(|t| t.flag).collect();
-    let per_row = 8.min(flags.len());
-    let spacing = "  ";
-
-    let mut rows: Vec<String> = Vec::new();
-    for chunk in flags.chunks(per_row) {
-        let row = chunk.join(spacing);
-        if row.chars().count() <= max_width as usize {
-            rows.push(row);
-        } else {
-            let half = chunk.len() / 2;
-            rows.push(chunk[..half].join(spacing));
-            rows.push(chunk[half..].join(spacing));
-        }
+fn flag_carousel(flags: &[&str], frame_count: usize, viewport_width: u16) -> String {
+    let total = flags.len();
+    if total == 0 {
+        return String::new();
     }
-    rows.join("\n")
+
+    let spacing = "  ";
+    let unit_width: usize = 4;
+
+    let visible_count = (viewport_width as usize / unit_width).max(1).min(total);
+
+    let rotation = (frame_count / 90) % total;
+
+    let mut parts: Vec<&str> = Vec::with_capacity(visible_count);
+    for i in 0..visible_count {
+        parts.push(flags[(rotation + i) % total]);
+    }
+
+    parts.join(spacing)
 }
 
 fn slow_pulse(frame_num: usize) -> Color {
