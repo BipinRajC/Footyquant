@@ -1,4 +1,5 @@
 use crate::models::{FeatureView, MatchPrediction, ModelParams};
+use crate::splash_data::{AliveTeamRow, NextMatch, NextMatchRow};
 use reqwest::Client;
 
 pub struct SupabaseClient {
@@ -131,5 +132,41 @@ impl SupabaseClient {
             .into_iter()
             .next()
             .ok_or_else(|| format!("Feature view not found for match {match_id}"))
+    }
+
+    pub async fn fetch_next_match(&self) -> Result<NextMatch, String> {
+        let rows: Vec<NextMatchRow> = self
+            .fetch_table("clean_wc_fixtures", crate::splash_data::next_match_query())
+            .await?;
+        rows.into_iter()
+            .map(NextMatch::from)
+            .next()
+            .ok_or_else(|| "No upcoming matches found".to_string())
+    }
+
+    pub async fn fetch_alive_teams(&self) -> Result<Vec<String>, String> {
+        let rows: Vec<AliveTeamRow> = self
+            .fetch_table(
+                "clean_wc_fixtures",
+                crate::splash_data::alive_teams_query(),
+            )
+            .await?;
+
+        let mut teams: Vec<String> = Vec::new();
+        for row in rows {
+            for team in [row.home_team, row.away_team] {
+                if team.contains('/')
+                    || team.starts_with("Winner")
+                    || team.starts_with("Loser")
+                {
+                    continue;
+                }
+                if !teams.contains(&team) {
+                    teams.push(team);
+                }
+            }
+        }
+        teams.sort();
+        Ok(teams)
     }
 }
