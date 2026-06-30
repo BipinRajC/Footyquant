@@ -143,15 +143,20 @@ def parse_match_data(fotmob_id):
     btts = bool(home_score and away_score and home_score > 0 and away_score > 0)
     total_goals = (home_score or 0) + (away_score or 0)
 
-    # AET / penalties detection
+    # AET / penalties detection from status fields
     match_outcome = "regular"
-    aet_home = teams[0].get("etScore")
-    aet_away = teams[1].get("etScore")
-    pens_home = teams[0].get("penaltyScore")
-    pens_away = teams[1].get("penaltyScore")
-    if pens_home is not None or pens_away is not None:
+    aet_home = None
+    aet_away = None
+    pens_home = None
+    pens_away = None
+    reason = status_info.get("reason", {})
+    halfs = status_info.get("halfs", {})
+    if reason.get("shortKey") == "afterpenalties" or reason.get("penalties"):
         match_outcome = "penalties"
-    elif aet_home is not None or aet_away is not None:
+        pens = reason.get("penalties")
+        if pens and len(pens) == 2:
+            pens_home, pens_away = pens[0], pens[1]
+    elif halfs.get("firstExtraHalfStarted") or halfs.get("secondExtraHalfStarted"):
         match_outcome = "aet"
 
     stats_data = content.get("stats", {})
