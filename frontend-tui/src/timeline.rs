@@ -1,6 +1,13 @@
 use crate::models::MatchPrediction;
 use serde::Deserialize;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    Correct,
+    Partial,
+    Wrong,
+}
+
 #[derive(Debug, Clone)]
 pub enum TimelineEntry {
     Completed {
@@ -13,11 +20,19 @@ pub enum TimelineEntry {
         home_score: i32,
         away_score: i32,
         result_1x2: String,
+        match_outcome: Option<String>,
+        aet_home_score: Option<i32>,
+        aet_away_score: Option<i32>,
+        penalties_home_score: Option<i32>,
+        penalties_away_score: Option<i32>,
+        aet_home_xg: Option<f64>,
+        aet_away_xg: Option<f64>,
         pred_home_qual: Option<f64>,
         pred_away_qual: Option<f64>,
         pred_home: Option<f64>,
         pred_away: Option<f64>,
         pred_draw: Option<f64>,
+        extra_time_prob: Option<f64>,
     },
     Upcoming(MatchPrediction),
 }
@@ -76,19 +91,31 @@ impl TimelineEntry {
         }
     }
 
-    pub fn model_correct(&self) -> Option<bool> {
+    pub fn model_verdict(&self) -> Option<Verdict> {
         match self {
             TimelineEntry::Completed {
                 result_1x2,
+                match_outcome,
                 pred_home_qual,
                 pred_away_qual,
+                extra_time_prob,
                 ..
             } => {
                 let hq = pred_home_qual.as_ref()?;
                 let aq = pred_away_qual.as_ref()?;
                 let predicted_home = *hq >= *aq;
                 let actual_home = result_1x2 == "H";
-                Some(predicted_home == actual_home)
+                let correct = predicted_home == actual_home;
+                let went_to_aet = matches!(match_outcome.as_deref(), Some("aet" | "penalties"));
+                let predicted_et = extra_time_prob.map_or(false, |p| p > 0.30);
+
+                if correct && !went_to_aet {
+                    Some(Verdict::Correct)
+                } else if !correct && went_to_aet && predicted_et {
+                    Some(Verdict::Partial)
+                } else {
+                    Some(Verdict::Wrong)
+                }
             }
             _ => None,
         }
@@ -110,6 +137,13 @@ pub struct CompletedMatchRow {
     pub home_score: i32,
     pub away_score: i32,
     pub result_1x2: String,
+    pub match_outcome: Option<String>,
+    pub aet_home_score: Option<i32>,
+    pub aet_away_score: Option<i32>,
+    pub penalties_home_score: Option<i32>,
+    pub penalties_away_score: Option<i32>,
+    pub aet_home_xg: Option<f64>,
+    pub aet_away_xg: Option<f64>,
 }
 
 pub fn display_name(team: &str) -> String {
@@ -164,11 +198,19 @@ pub fn merge_timeline(
             home_score: row.home_score,
             away_score: row.away_score,
             result_1x2: row.result_1x2,
+            match_outcome: row.match_outcome,
+            aet_home_score: row.aet_home_score,
+            aet_away_score: row.aet_away_score,
+            penalties_home_score: row.penalties_home_score,
+            penalties_away_score: row.penalties_away_score,
+            aet_home_xg: row.aet_home_xg,
+            aet_away_xg: row.aet_away_xg,
             pred_home_qual: pred.map(|p| p.home_qualify_prob.unwrap_or(0.0)),
             pred_away_qual: pred.map(|p| p.away_qualify_prob.unwrap_or(0.0)),
             pred_home: pred.map(|p| p.prob_home),
             pred_away: pred.map(|p| p.prob_away),
             pred_draw: pred.map(|p| p.prob_draw),
+            extra_time_prob: pred.and_then(|p| p.extra_time_prob),
         });
     }
 

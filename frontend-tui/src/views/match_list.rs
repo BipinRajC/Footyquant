@@ -1,6 +1,6 @@
 use crate::app::App;
 use crate::theme;
-use crate::timeline::{display_name, TimelineEntry};
+use crate::timeline::{display_name, TimelineEntry, Verdict};
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -306,13 +306,12 @@ fn render_completed_line(entry: &TimelineEntry, selected: bool) -> Line {
                 } else {
                     format!("  Model: {}% A", (*aq * 100.0) as u32)
                 };
-                let actual_home = result_1x2 == "H";
-                let correct = predicted_home == actual_home;
 
-                let mark = if correct {
-                    Span::styled(" \u{2713}", theme::confidence_high())
-                } else {
-                    Span::styled(" \u{2717}", theme::confidence_low())
+                let (mark, mark_style) = match entry.model_verdict() {
+                    Some(Verdict::Correct) => (" \u{2713}", theme::confidence_high()),
+                    Some(Verdict::Partial) => (" \u{25d0}", Style::default().fg(theme::AMBER)),
+                    Some(Verdict::Wrong) => (" \u{2717}", theme::confidence_low()),
+                    None => (" \u{2713}", theme::confidence_high()),
                 };
 
                 let pred_style = if selected {
@@ -321,7 +320,7 @@ fn render_completed_line(entry: &TimelineEntry, selected: bool) -> Line {
                     theme::label_gray()
                 };
                 spans.push(Span::styled(pred_label, pred_style));
-                spans.push(mark);
+                spans.push(Span::styled(mark, mark_style));
             }
 
             Line::from(spans)
@@ -398,8 +397,14 @@ fn render_quick_look(frame: &mut Frame, area: Rect, app: &App) {
             home_score,
             away_score,
             result_1x2,
+            match_outcome,
+            aet_home_score,
+            aet_away_score,
+            penalties_home_score,
+            penalties_away_score,
             pred_home_qual,
             pred_away_qual,
+            extra_time_prob,
             ..
         } => {
             let score = format!(
@@ -436,8 +441,6 @@ fn render_quick_look(frame: &mut Frame, area: Rect, app: &App) {
                 let predicted_home = *hq >= *aq;
                 let predicted_winner = if predicted_home { home_team } else { away_team };
                 let predicted_prob = if predicted_home { *hq } else { *aq };
-                let actual_home = result_1x2 == "H";
-                let correct = predicted_home == actual_home;
 
                 lines.push(Line::from(vec![
                     Span::styled("Model predicted ", theme::metadata()),
@@ -452,50 +455,100 @@ fn render_quick_look(frame: &mut Frame, area: Rect, app: &App) {
                 ]));
                 lines.push(Line::raw(""));
 
-                if correct {
-                    lines.push(Line::from(vec![
-                        Span::styled(
-                            "  \u{2713}  ",
-                            Style::default()
-                                .fg(theme::GREEN)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(
-                            format!("{} qualified as predicted.", predicted_winner),
-                            theme::narrative(),
-                        ),
-                    ]));
-                } else {
-                    lines.push(Line::from(vec![
-                        Span::styled(
-                            "  \u{2717}  ",
-                            Style::default().fg(theme::RED).add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(
-                            format!(
-                                "{} qualified instead. The model favored {} ({}%).",
-                                actual_winner,
-                                predicted_winner,
-                                (predicted_prob * 100.0) as u32
+                match entry.model_verdict() {
+                    Some(Verdict::Correct) => {
+                        lines.push(Line::from(vec![
+                            Span::styled(
+                                "  \u{2713}  ",
+                                Style::default()
+                                    .fg(theme::GREEN)
+                                    .add_modifier(Modifier::BOLD),
                             ),
+                            Span::styled(
+                                format!("{} qualified as predicted.", predicted_winner),
+                                theme::narrative(),
+                            ),
+                        ]));
+                    }
+                    Some(Verdict::Partial) => {
+                        let et_pct = extra_time_prob.map(|p| (p * 100.0) as u32).unwrap_or(0);
+                        lines.push(Line::from(vec![
+                            Span::styled(
+                                "  \u{25d0}  ",
+                                Style::default()
+                                    .fg(theme::AMBER)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(
+                                format!(
+                                    "{} v {} went the distance \u{2014} exactly the",
+                                    home_team, away_team
+                                ),
+                                theme::narrative(),
+                            ),
+                        ]));
+                        lines.push(Line::from(Span::styled(
+                            "kind of high-entropy scenario the model flagged.",
                             theme::narrative(),
-                        ),
-                    ]));
+                        )));
+                        lines.push(Line::from(Span::styled(
+                            format!(
+                                "The model predicted extra time was likely ({}%). \
+                                 The 90' prediction was spot on \u{2014} \
+                                 extra time and pens are a coin toss.",
+                                et_pct
+                            ),
+                            theme::metadata(),
+                        )));
+                    }
+                    Some(Verdict::Wrong) => {
+                        lines.push(Line::from(vec![
+                            Span::styled(
+                                "  \u{2717}  ",
+                                Style::default().fg(theme::RED).add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(
+                                format!(
+                                    "{} qualified instead. The model favored {} ({}%).",
+                                    actual_winner,
+                                    predicted_winner,
+                                    (predicted_prob * 100.0) as u32
+                                ),
+                                theme::narrative(),
+                            ),
+                        ]));
+                    }
+                    None => {}
                 }
+
                 lines.push(Line::raw(""));
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        format!("{} eliminated. ", actual_loser),
-                        theme::label_gray(),
-                    ),
-                    Span::styled(
+                let final_detail = match (
+                    match_outcome.as_deref(),
+                    aet_home_score,
+                    aet_away_score,
+                    penalties_home_score,
+                    penalties_away_score,
+                ) {
+                    (Some("penalties"), Some(ah), Some(aa), Some(ph), Some(pa)) => {
                         format!(
-                            "Final: {} {}-{} {}.",
-                            home_team, home_score, away_score, away_team
-                        ),
-                        theme::metadata(),
-                    ),
-                ]));
+                            "{} eliminated. Final: {} {}-{} {} (AET, {}-{} pens).",
+                            actual_loser, home_team, home_score, away_score, away_team, ph, pa
+                        )
+                    }
+                    (Some("aet"), Some(ah), Some(aa), _, _) => {
+                        format!(
+                            "{} eliminated. Final: {} {}-{} {} (AET).",
+                            actual_loser, home_team, home_score, away_score, away_team
+                        )
+                    }
+                    _ => {
+                        format!(
+                            "{} eliminated. Final: {} {}-{} {}.",
+                            actual_loser, home_team, home_score, away_score, away_team
+                        )
+                    }
+                };
+                lines.push(Line::from(Span::styled(final_detail, theme::metadata())));
             } else {
                 lines.push(Line::from(vec![Span::styled(
                     format!("{} qualified past {}.", actual_winner, actual_loser),

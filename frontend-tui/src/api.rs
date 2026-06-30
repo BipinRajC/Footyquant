@@ -190,7 +190,7 @@ impl SupabaseClient {
     pub async fn fetch_completed_knockout(&self) -> Result<Vec<CompletedMatchRow>, String> {
         self.fetch_table(
             "clean_wc_fixtures",
-            "is_played=eq.true&is_knockout=eq.true&order=match_date.desc&select=match_id,match_date,home_team,away_team,stage,group_name,home_score,away_score,result_1x2",
+            "is_played=eq.true&is_knockout=eq.true&order=match_date.desc&select=match_id,match_date,home_team,away_team,stage,group_name,home_score,away_score,result_1x2,match_outcome,aet_home_score,aet_away_score,penalties_home_score,penalties_away_score,aet_home_xg,aet_away_xg",
         )
         .await
     }
