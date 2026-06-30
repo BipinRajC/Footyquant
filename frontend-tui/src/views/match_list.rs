@@ -310,7 +310,10 @@ fn render_completed_line(entry: &TimelineEntry, selected: bool) -> Line {
                 let (mark, mark_style) = match entry.model_verdict() {
                     Some(Verdict::Correct) => (" \u{2713}", theme::confidence_high()),
                     Some(Verdict::Partial) => (" \u{25d0}", Style::default().fg(theme::AMBER)),
-                    Some(Verdict::Wrong) => (" \u{2717}", theme::confidence_low()),
+                    Some(Verdict::Wrong) => (
+                        " \u{2717}",
+                        Style::default().fg(theme::RED).add_modifier(Modifier::BOLD),
+                    ),
                     None => (" \u{2713}", theme::confidence_high()),
                 };
 
@@ -435,6 +438,7 @@ fn render_quick_look(frame: &mut Frame, area: Rect, app: &App) {
                         .add_modifier(Modifier::BOLD),
                 )),
                 Line::raw(""),
+                Line::raw(""),
             ];
 
             if let (Some(hq), Some(aq)) = (pred_home_qual, pred_away_qual) {
@@ -479,16 +483,15 @@ fn render_quick_look(frame: &mut Frame, area: Rect, app: &App) {
                                     .fg(theme::AMBER)
                                     .add_modifier(Modifier::BOLD),
                             ),
-                            Span::styled(
-                                format!(
-                                    "{} v {} went the distance \u{2014} exactly the",
-                                    home_team, away_team
-                                ),
-                                theme::narrative(),
-                            ),
+                            Span::styled("Partially Correct", theme::label_amber()),
                         ]));
+                        lines.push(Line::raw(""));
                         lines.push(Line::from(Span::styled(
-                            "kind of high-entropy scenario the model flagged.",
+                            format!(
+                                "{} v {} went the distance \u{2014} exactly the \
+                                 kind of high-entropy scenario the model flagged.",
+                                home_team, away_team
+                            ),
                             theme::narrative(),
                         )));
                         lines.push(Line::from(Span::styled(
@@ -524,18 +527,16 @@ fn render_quick_look(frame: &mut Frame, area: Rect, app: &App) {
                 lines.push(Line::raw(""));
                 let final_detail = match (
                     match_outcome.as_deref(),
-                    aet_home_score,
-                    aet_away_score,
                     penalties_home_score,
                     penalties_away_score,
                 ) {
-                    (Some("penalties"), Some(ah), Some(aa), Some(ph), Some(pa)) => {
+                    (Some("penalties"), Some(ph), Some(pa)) => {
                         format!(
-                            "{} eliminated. Final: {} {}-{} {} (AET, {}-{} pens).",
+                            "{} eliminated. Final: {} {}-{} {} ({}-{} pens).",
                             actual_loser, home_team, home_score, away_score, away_team, ph, pa
                         )
                     }
-                    (Some("aet"), Some(ah), Some(aa), _, _) => {
+                    (Some("aet"), _, _) => {
                         format!(
                             "{} eliminated. Final: {} {}-{} {} (AET).",
                             actual_loser, home_team, home_score, away_score, away_team
@@ -548,6 +549,7 @@ fn render_quick_look(frame: &mut Frame, area: Rect, app: &App) {
                         )
                     }
                 };
+                lines.push(Line::raw(""));
                 lines.push(Line::from(Span::styled(final_detail, theme::metadata())));
             } else {
                 lines.push(Line::from(vec![Span::styled(
@@ -677,7 +679,7 @@ fn render_quick_look(frame: &mut Frame, area: Rect, app: &App) {
 
             let summary = pred.quick_summary();
             let summary_lines = wrap_text(&summary, summary_area.width as usize);
-            let mut lines = vec![Line::raw("")];
+            let mut lines = vec![Line::raw(""), Line::raw("")];
             for sl in summary_lines {
                 lines.push(Line::from(Span::styled(sl, theme::narrative())));
             }
