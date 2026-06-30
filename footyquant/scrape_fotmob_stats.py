@@ -378,7 +378,7 @@ def main():
                 text("""
                     SELECT DISTINCT m.fotmob_match_id
                     FROM public.matches m
-                    JOIN clean_wc_fixtures f ON m.match_id = f.match_id
+                    JOIN clean_wc_fixtures f ON m.match_id::text = f.match_id
                     WHERE f.is_knockout = true
                       AND m.fotmob_match_id IS NOT NULL
                 """)
