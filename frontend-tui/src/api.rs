@@ -1,3 +1,5 @@
+pub mod fireworks;
+
 use crate::models::{FeatureView, MatchPrediction, ModelParams};
 use crate::splash_data::{AliveTeamRow, NextMatch, NextMatchRow};
 use crate::timeline::CompletedMatchRow;

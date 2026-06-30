@@ -1,5 +1,5 @@
-pub mod app;
 pub mod api;
+pub mod app;
 pub mod ascii_art;
 pub mod flags;
 pub mod models;

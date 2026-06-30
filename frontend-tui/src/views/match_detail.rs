@@ -1,10 +1,11 @@
 use crate::app::App;
-use crate::ascii_art;
 use crate::theme;
+use crate::timeline::stage_label_for;
 use crate::widgets::{prob_display, scoreline_grid, team_compare};
 use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 use ratatui::Frame;
 
 pub fn render(frame: &mut Frame, app: &App) {
@@ -49,6 +50,9 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     let bar_width = 30;
     let mut lines: Vec<Line> = Vec::new();
 
+    let home = &pred.home_team;
+    let away = &pred.away_team;
+
     // Section 1: Broadcast Headline
     lines.push(Line::from(Span::styled(
         theme::separator(),
@@ -63,20 +67,8 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::raw(""));
 
     // Section 2: The Fixture
-    let stage_label = if pred.stage == "knockout" {
-        "ROUND OF 32".to_string()
-    } else {
-        format!("GROUP {}", pred.group_name.as_deref().unwrap_or("?"))
-    };
-    let date_str = if pred.match_date.len() >= 16 {
-        format!(
-            "{} · {} UTC",
-            &pred.match_date[..10],
-            &pred.match_date[11..16]
-        )
-    } else {
-        pred.match_date.clone()
-    };
+    let stage_label = stage_label_for(&pred.match_date, &pred.stage, pred.group_name.as_deref());
+    let date_str = to_ist(&pred.match_date);
 
     lines.push(Line::from(Span::styled(
         format!("          {}", stage_label),
@@ -93,8 +85,6 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
 
-    let home = &pred.home_team;
-    let away = &pred.away_team;
     lines.push(Line::from(vec![
         Span::raw("     "),
         Span::styled(format!("{:<16}", home.to_uppercase()), theme::team_name()),
@@ -122,7 +112,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     lines.push(Line::from(Span::styled(
-        format!("     {}", ascii_art::vs_separator()),
+        format!("     {}", crate::ascii_art::vs_separator()),
         theme::label_gray(),
     )));
     lines.push(Line::from(Span::styled(
@@ -130,7 +120,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
         theme::label_amber(),
     )));
     lines.push(Line::from(Span::styled(
-        format!("     {}", ascii_art::vs_separator()),
+        format!("     {}", crate::ascii_art::vs_separator()),
         theme::label_gray(),
     )));
     lines.push(Line::raw(""));
@@ -147,7 +137,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     )));
     lines.push(Line::raw(""));
 
-    // 1X2 — using thin line gauge style (━ filled, ─ unfilled)
+    // 1X2
     lines.push(Line::from(Span::styled("1X2", theme::label_amber())));
     for (label, prob) in [
         (home.as_str(), pred.prob_home),
@@ -190,7 +180,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     ]));
     lines.push(Line::raw(""));
 
-    // Over/Under 2.5 — using block gauge style (▮ filled, ░ unfilled)
+    // Over/Under 2.5
     lines.push(Line::from(Span::styled(
         "OVER / UNDER 2.5",
         theme::label_amber(),
@@ -207,7 +197,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     ));
     lines.push(Line::raw(""));
 
-    // BTTS — using diamond gauge style (◆ filled, ◇ unfilled)
+    // BTTS
     lines.push(Line::from(Span::styled(
         "BOTH TEAMS TO SCORE",
         theme::label_amber(),
@@ -221,7 +211,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
 
-    // Section 4: Expected Goals — using vertical bar blocks
+    // Section 4: Expected Goals
     lines.push(Line::from(Span::styled(
         "EXPECTED GOALS",
         theme::section_header(),
@@ -237,7 +227,9 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
         Span::raw("                          "),
         Span::styled(away.as_str(), theme::team_name()),
     ]));
-    lines.push(render_xg_bars(pred.dc_home_xg, pred.dc_away_xg, bar_width));
+    for l in render_xg_bars(pred.dc_home_xg, pred.dc_away_xg, bar_width) {
+        lines.push(l);
+    }
     lines.push(Line::from(vec![
         Span::raw("     "),
         Span::styled(format!("{:.2}", pred.dc_home_xg), theme::number()),
@@ -258,8 +250,15 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     )));
     lines.push(Line::raw(""));
     let scorelines = pred.scorelines();
-    for sl in scoreline_grid::render_scorelines(&scorelines, bar_width) {
-        lines.push(sl);
+    if scorelines.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  No scoreline data available.",
+            theme::label_gray(),
+        )));
+    } else {
+        for sl in scoreline_grid::render_scorelines(&scorelines, bar_width) {
+            lines.push(sl);
+        }
     }
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
@@ -292,22 +291,9 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
         theme::label_gray(),
     )));
     lines.push(Line::raw(""));
-    let context_line = if pred.stage == "knockout" {
-        format!("Round of 32 · Knockout Stage")
-    } else {
-        format!(
-            "Group Stage · Group {}",
-            pred.group_name.as_deref().unwrap_or("?")
-        )
-    };
-    let context_desc = if pred.stage == "knockout" {
-        "Winner advances to the Round of 16. Loser is eliminated."
-    } else {
-        "Qualification scenarios depend on other group results."
-    };
-    lines.push(Line::from(Span::styled(context_line, theme::narrative())));
-    lines.push(Line::raw(""));
-    lines.push(Line::from(Span::styled(context_desc, theme::metadata())));
+    for l in render_match_context(&stage_label) {
+        lines.push(l);
+    }
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
 
@@ -343,6 +329,46 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::from(Span::styled(current_line, theme::narrative())));
     }
     lines.push(Line::raw(""));
+    lines.push(Line::raw(""));
+
+    // Section 9: AI Prompt for Second Opinion
+    lines.push(Line::from(Span::styled(
+        "AI PROMPT FOR SECOND OPINION",
+        theme::section_header(),
+    )));
+    lines.push(Line::from(Span::styled(
+        theme::separator(),
+        theme::label_gray(),
+    )));
+    lines.push(Line::raw(""));
+
+    if app.ai_prompt_loading {
+        let spinner = crate::ascii_art::football_spinner(app.frame_count);
+        lines.push(Line::from(Span::styled(
+            format!("  {}  Generating prompt via DeepSeek V4 Flash...", spinner),
+            theme::metadata(),
+        )));
+    } else if let Some(prompt) = &app.ai_prompt {
+        lines.push(Line::raw(""));
+        for pl in wrap_text(prompt, max_width) {
+            lines.push(Line::from(Span::styled(pl, theme::narrative())));
+        }
+        lines.push(Line::raw(""));
+        lines.push(Line::from(Span::styled(
+            "Copy this prompt and paste into any LLM for independent analysis.",
+            theme::label_gray(),
+        )));
+        lines.push(Line::raw(""));
+    } else {
+        lines.push(Line::from(Span::styled(
+            "  Press P to generate a research prompt for additional LLM analysis",
+            theme::metadata(),
+        )));
+        lines.push(Line::from(Span::styled(
+            "  on betting opportunities for this match.",
+            theme::metadata(),
+        )));
+    }
 
     let para = Paragraph::new(lines).scroll((app.scroll as u16, 0));
     frame.render_widget(para, area);
@@ -393,46 +419,140 @@ fn render_diamond_gauge(label: &str, prob: f64, width: usize) -> Line<'static> {
     ])
 }
 
-fn render_xg_bars(home_xg: f64, away_xg: f64, width: usize) -> Line<'static> {
+fn render_xg_bars(home_xg: f64, away_xg: f64, width: usize) -> Vec<Line<'static>> {
     let max_xg = 3.0;
-    let home_filled = ((home_xg / max_xg * width as f64).round() as usize).min(width);
-    let away_filled = ((away_xg / max_xg * width as f64).round() as usize).min(width);
+    let home_ratio = (home_xg / max_xg).clamp(0.0, 1.0);
+    let away_ratio = (away_xg / max_xg).clamp(0.0, 1.0);
 
-    let blocks = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    let home_bar = theme::make_bar(home_ratio, width);
+    let away_bar = theme::make_bar(away_ratio, width);
 
-    let mut home_bar = String::with_capacity(width);
-    for i in 0..width {
-        if i < home_filled {
-            let block_idx =
-                ((home_xg / max_xg * blocks.len() as f64) as usize).min(blocks.len() - 1);
-            home_bar.push(blocks[block_idx]);
-        } else {
-            home_bar.push(' ');
-        }
-    }
-
-    let mut away_bar = String::with_capacity(width);
-    for i in 0..width {
-        if i < away_filled {
-            let block_idx =
-                ((away_xg / max_xg * blocks.len() as f64) as usize).min(blocks.len() - 1);
-            away_bar.push(blocks[block_idx]);
-        } else {
-            away_bar.push(' ');
-        }
-    }
-
-    Line::from(vec![
+    vec![Line::from(vec![
         Span::raw("     "),
         Span::styled(home_bar, theme::label_amber()),
-        Span::raw("                        "),
+        Span::raw("          "),
         Span::styled(away_bar, theme::narrative()),
-    ])
+    ])]
+}
+
+fn render_match_context(stage_label: &str) -> Vec<Line<'static>> {
+    let round_name = format!("{} \u{00b7} Knockout Stage", stage_label);
+    let path = bracket_path(stage_label);
+
+    vec![
+        Line::from(Span::styled(round_name, theme::narrative())),
+        Line::raw(""),
+        Line::from(Span::styled(
+            format!("Winner faces TBD in the next round."),
+            theme::metadata(),
+        )),
+        Line::from(Span::styled(
+            format!("Path to final: {}", path),
+            theme::metadata(),
+        )),
+    ]
+}
+
+fn bracket_path(stage_label: &str) -> String {
+    match stage_label {
+        "R32" => "R32 \u{2192} R16 \u{2192} QF \u{2192} SF \u{2192} Final",
+        "R16" => "R16 \u{2192} QF \u{2192} SF \u{2192} Final",
+        "QF" => "QF \u{2192} SF \u{2192} Final",
+        "SF" => "SF \u{2192} Final",
+        "Final" => "Final",
+        _ => "Knockout Stage",
+    }
+    .to_string()
+}
+
+fn to_ist(match_date: &str) -> String {
+    if match_date.len() < 16 {
+        return "??:??".to_string();
+    }
+    let date_part = &match_date[..10];
+    let time_part = &match_date[11..16];
+    let (h, m) = match time_part.split_once(':') {
+        Some((h, m)) => (h.parse::<u32>().unwrap_or(0), m.parse::<u32>().unwrap_or(0)),
+        None => return "??:??".to_string(),
+    };
+    let total_mins = h * 60 + m + 570;
+    let days_advance = total_mins / 1440;
+    let day_mins = total_mins % 1440;
+    let ist_h = day_mins / 60;
+    let ist_m = day_mins % 60;
+
+    let parts: Vec<&str> = date_part.split('-').collect();
+    if parts.len() == 3 {
+        let y: u32 = parts[0].parse().unwrap_or(0);
+        let mo: u32 = parts[1].parse().unwrap_or(0);
+        let d: u32 = parts[2].parse().unwrap_or(0) + days_advance;
+        let (y, mo, d) = normalize_date(y, mo, d);
+        format!("{:04}-{:02}-{:02} {:02}:{:02} IST", y, mo, d, ist_h, ist_m)
+    } else {
+        format!("{} {:02}:{:02} IST", date_part, ist_h, ist_m)
+    }
+}
+
+fn normalize_date(y: u32, mo: u32, d: u32) -> (u32, u32, u32) {
+    let days_in_month = |y: u32, m: u32| -> u32 {
+        match m {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 => {
+                if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) {
+                    29
+                } else {
+                    28
+                }
+            }
+            _ => 30,
+        }
+    };
+    let mut y = y;
+    let mut mo = mo;
+    let mut d = d;
+    loop {
+        let dim = days_in_month(y, mo);
+        if d <= dim {
+            break;
+        }
+        d -= dim;
+        mo += 1;
+        if mo > 12 {
+            mo = 1;
+            y += 1;
+        }
+    }
+    (y, mo, d)
+}
+
+fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut lines: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for word in words {
+        if current.is_empty() {
+            current = word.to_string();
+        } else if current.len() + word.len() + 1 <= max_width {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(current);
+            current = word.to_string();
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
 }
 
 fn render_footer(frame: &mut Frame, area: Rect) {
     frame.render_widget(
-        Paragraph::new("↑↓ Scroll · Esc: Back · Q: Quit").style(theme::metadata()),
+        Paragraph::new(
+            "\u{2191}\u{2193} Scroll \u{00b7} Esc: Back \u{00b7} P: AI Prompt \u{00b7} Q: Quit",
+        )
+        .style(theme::metadata()),
         area,
     );
 }

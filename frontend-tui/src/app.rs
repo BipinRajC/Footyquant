@@ -1,3 +1,4 @@
+use crate::api::fireworks::{generate_ai_prompt, MatchPromptData};
 use crate::api::SupabaseClient;
 use crate::models::{FeatureView, MatchPrediction, ModelParams};
 use crate::splash_data::{fact_for_index, NextMatch, TeamInfo, WC_FACTS};
@@ -30,6 +31,7 @@ enum AppMsg {
     Error(String),
     SplashNextMatch(Option<NextMatch>),
     SplashAliveTeams(Vec<TeamInfo>),
+    AiPrompt(String),
 }
 
 pub struct App {
@@ -55,6 +57,8 @@ pub struct App {
     pub splash_teams_loaded: bool,
     pub results_scroll: usize,
     pub upcoming_scroll: usize,
+    pub ai_prompt: Option<String>,
+    pub ai_prompt_loading: bool,
     msg_tx: Option<mpsc::Sender<AppMsg>>,
 }
 
@@ -86,6 +90,8 @@ impl App {
             splash_teams_loaded: false,
             results_scroll: 0,
             upcoming_scroll: 0,
+            ai_prompt: None,
+            ai_prompt_loading: false,
             msg_tx: None,
         })
     }
@@ -246,10 +252,21 @@ impl App {
                         self.scroll = 0;
                     }
                 }
+                KeyCode::Char('p') | KeyCode::Char('P') => {
+                    if self.view == View::MatchDetail
+                        && self.ai_prompt.is_none()
+                        && !self.ai_prompt_loading
+                    {
+                        self.ai_prompt_loading = true;
+                        self.generate_ai_prompt();
+                    }
+                }
                 KeyCode::Char('r') | KeyCode::Char('R') => {
                     if self.view != View::Splash {
                         self.loading = true;
                         self.fetch_data();
+                        self.ai_prompt = None;
+                        self.ai_prompt_loading = false;
                     }
                 }
                 KeyCode::Down => match self.view {
@@ -349,6 +366,41 @@ impl App {
         }
     }
 
+    fn generate_ai_prompt(&self) {
+        if let Some(TimelineEntry::Upcoming(pred)) = self.timeline.get(self.selected_match) {
+            let feature = self.current_feature.as_ref();
+            let data = MatchPromptData::from_prediction(
+                pred,
+                feature.and_then(|f| f.home_elo),
+                feature.and_then(|f| f.away_elo),
+                feature.and_then(|f| f.home_form_score),
+                feature.and_then(|f| f.away_form_score),
+            );
+            if let Some(tx) = &self.msg_tx {
+                let tx = tx.clone();
+                tokio::spawn(async move {
+                    let api_key = std::env::var("FIREWORKS_API_KEY").unwrap_or_default();
+                    if api_key.is_empty() {
+                        let _ = tx
+                            .send(AppMsg::AiPrompt(
+                                "Set FIREWORKS_API_KEY environment variable.".to_string(),
+                            ))
+                            .await;
+                        return;
+                    }
+                    match generate_ai_prompt(&api_key, &data).await {
+                        Ok(prompt) => {
+                            let _ = tx.send(AppMsg::AiPrompt(prompt)).await;
+                        }
+                        Err(e) => {
+                            let _ = tx.send(AppMsg::AiPrompt(format!("Error: {}", e))).await;
+                        }
+                    }
+                });
+            }
+        }
+    }
+
     fn fetch_feature_for_selected(&self) {
         if let Some(TimelineEntry::Upcoming(pred)) = self.timeline.get(self.selected_match) {
             let match_id = pred.match_id.clone();
@@ -397,6 +449,10 @@ impl App {
             AppMsg::SplashAliveTeams(teams) => {
                 self.alive_teams = teams;
                 self.splash_teams_loaded = true;
+            }
+            AppMsg::AiPrompt(prompt) => {
+                self.ai_prompt = Some(prompt);
+                self.ai_prompt_loading = false;
             }
         }
     }
