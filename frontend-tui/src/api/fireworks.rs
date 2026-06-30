@@ -59,7 +59,7 @@ impl MatchPromptData {
 
     pub fn to_prompt_text(&self) -> String {
         format!(
-            r#"Analyze the following World Cup 2026 knockout match and suggest betting opportunities.
+            r#"Analyze the following World Cup 2026 knockout match and suggest SAFE betting opportunities.
 
 ## Match Context
 - Stage: {}
@@ -67,7 +67,7 @@ impl MatchPromptData {
 - {} vs {}
 
 ## Model Predictions (MATCHDAY v2.0.0)
-- 1X2: {}% / {}% / {}%
+- 1X2 (90' + stoppage): {}% / {}% / {}%
 - To Qualify: {}% / {}%
 - Confidence: {}
 - Expected Goals (DC): {:.2} vs {:.2}
@@ -83,13 +83,15 @@ impl MatchPromptData {
 {}
 
 ## Your Task
-Provide an independent analysis of this match. Consider:
-1. Do you agree with the model's probabilities?
-2. What is the best betting opportunity here?
-3. Are there any mismatches between market odds and model predictions?
-4. What is your recommended bet and why?
+Provide an independent analysis focused on SAFE betting opportunities. Consider:
+1. Which markets have the highest probability and lowest risk?
+2. Is the <to qualify> market a safe bet given the probabilities?
+3. Is <both teams to score> likely based on xG and form?
+4. Is <over/under 2.5> a confident prediction?
+5. Is the <1x2> market reliable for 90' + stoppage time?
+6. Are there any mismatches between probabilities that create value?
 
-Be specific with your recommendations and explain your reasoning."#,
+Recommend only bets where the model confidence is HIGH or the probability gap is significant. Avoid suggesting risky parlays or long shots. Be specific with your recommendations and explain your reasoning."#,
             self.stage, self.match_date, self.home_team, self.away_team,
             fmt_pct(self.prob_home), fmt_pct(self.prob_draw), fmt_pct(self.prob_away),
             fmt_pct(self.home_qualify_prob), fmt_pct(self.away_qualify_prob),
@@ -144,11 +146,11 @@ pub async fn generate_ai_prompt(
         "messages": [
             {
                 "role": "system",
-                "content": "You are a betting research assistant. Generate a concise, copy-pasteable prompt that a user can feed into any LLM for independent match analysis. Focus on betting opportunities. Return ONLY the prompt text, no additional commentary."
+                "content": "You are a betting research assistant. Generate a concise, copy-pasteable prompt that a user can feed into any LLM for independent match analysis. Focus on SAFE betting opportunities, particularly on markets like <to qualify>, <both teams to score>, <over/under X goals>, <1x2 for 90 + stoppage time> and more if you think it is an inherently safer bet based upon all the stats provided to you. Return ONLY the prompt text, no additional commentary."
             },
             {
                 "role": "user",
-                "content": format!("Create a betting research prompt for this match. Include all relevant context, probabilities, and stats so any LLM can give an informed second opinion:\n\n{}", prompt_text)
+                "content": format!("Create a SAFE betting research prompt for this match. Focus on low-risk markets like to qualify, both teams to score, over/under goals, and 1x2. Include all relevant context, probabilities, and stats so any LLM can give an informed second opinion:\n\n{}", prompt_text)
             }
         ],
         "max_tokens": 1500,
