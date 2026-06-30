@@ -1,11 +1,12 @@
 use crate::app::App;
+use crate::bracket;
 use crate::theme;
 use crate::timeline::stage_label_for;
 use crate::widgets::{prob_display, scoreline_grid, team_compare};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
+use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 pub fn render(frame: &mut Frame, app: &App) {
@@ -66,51 +67,30 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
 
-    // Section 2: The Fixture
+    // Section 2: Match Forecast (with fixture info right-aligned on header)
     let stage_label = stage_label_for(&pred.match_date, &pred.stage, pred.group_name.as_deref());
     let date_str = to_ist(&pred.match_date);
+    let fixture_info = format!("{} \u{00b7} {}", stage_label, date_str);
 
+    let header_line = Line::from(vec![
+        Span::styled("MATCH FORECAST", theme::section_header()),
+        Span::raw("                    "),
+        Span::styled(fixture_info, theme::metadata()),
+    ]);
+    lines.push(header_line);
     lines.push(Line::from(Span::styled(
-        format!("          {}", stage_label),
-        theme::section_header(),
-    )));
-    lines.push(Line::from(Span::styled(
-        format!("          {}", theme::short_separator()),
+        theme::separator(),
         theme::label_gray(),
     )));
-    lines.push(Line::from(Span::styled(
-        format!("          {}", date_str),
-        theme::metadata(),
-    )));
-    lines.push(Line::raw(""));
     lines.push(Line::raw(""));
 
+    // Team names
     lines.push(Line::from(vec![
         Span::raw("     "),
         Span::styled(format!("{:<16}", home.to_uppercase()), theme::team_name()),
         Span::raw("          "),
         Span::styled(format!("{:>16}", away.to_uppercase()), theme::team_name()),
     ]));
-
-    if let Some(f) = &app.current_feature {
-        lines.push(Line::from(Span::styled(
-            format!(
-                "          {:<16}          {:>16}",
-                format!("Elo: {}", f.home_elo.map(|e| e as i32).unwrap_or(0)),
-                format!("Elo: {}", f.away_elo.map(|e| e as i32).unwrap_or(0))
-            ),
-            theme::metadata(),
-        )));
-        lines.push(Line::from(Span::styled(
-            format!(
-                "          {:<16}          {:>16}",
-                format!("Form: {:.1}", f.home_form_score.unwrap_or(0.0)),
-                format!("Form: {:.1}", f.away_form_score.unwrap_or(0.0))
-            ),
-            theme::metadata(),
-        )));
-    }
-
     lines.push(Line::from(Span::styled(
         format!("     {}", crate::ascii_art::vs_separator()),
         theme::label_gray(),
@@ -121,18 +101,6 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     )));
     lines.push(Line::from(Span::styled(
         format!("     {}", crate::ascii_art::vs_separator()),
-        theme::label_gray(),
-    )));
-    lines.push(Line::raw(""));
-    lines.push(Line::raw(""));
-
-    // Section 3: Match Forecast
-    lines.push(Line::from(Span::styled(
-        "MATCH FORECAST",
-        theme::section_header(),
-    )));
-    lines.push(Line::from(Span::styled(
-        theme::separator(),
         theme::label_gray(),
     )));
     lines.push(Line::raw(""));
@@ -166,7 +134,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
             format!(" {}%", (pred.ah_home_prob * 100.0) as u32),
             theme::number(),
         ),
-        Span::raw(" · "),
+        Span::raw(" \u{00b7} "),
         Span::styled(away.as_str(), theme::narrative()),
         Span::styled(
             format!(" {}%", (pred.ah_away_prob * 100.0) as u32),
@@ -211,7 +179,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
 
-    // Section 4: Expected Goals
+    // Section 3: Expected Goals
     lines.push(Line::from(Span::styled(
         "EXPECTED GOALS",
         theme::section_header(),
@@ -239,7 +207,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
 
-    // Section 5: Likely Scorelines
+    // Section 4: Likely Scorelines
     lines.push(Line::from(Span::styled(
         "LIKELY SCORELINES",
         theme::section_header(),
@@ -263,7 +231,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
 
-    // Section 6: Tactical Outlook
+    // Section 5: Tactical Outlook
     if let Some(feature) = &app.current_feature {
         lines.push(Line::from(Span::styled(
             "TACTICAL OUTLOOK",
@@ -281,7 +249,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::raw(""));
     }
 
-    // Section 7: Match Context
+    // Section 6: Match Context
     lines.push(Line::from(Span::styled(
         "MATCH CONTEXT",
         theme::section_header(),
@@ -291,13 +259,28 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
         theme::label_gray(),
     )));
     lines.push(Line::raw(""));
-    for l in render_match_context(&stage_label) {
-        lines.push(l);
-    }
+
+    let ctx = bracket::get_match_context(home, away, &app.completed_matches);
+    lines.push(Line::from(Span::styled(
+        format!("{} \u{00b7} {}", ctx.current_round, ctx.bracket_side),
+        theme::narrative(),
+    )));
+    lines.push(Line::raw(""));
+    lines.push(Line::from(Span::styled(
+        format!(
+            "Winner faces {} in the {}.",
+            ctx.next_opponent, ctx.next_round_name
+        ),
+        theme::metadata(),
+    )));
+    lines.push(Line::from(Span::styled(
+        format!("Path to final: {}", ctx.path_to_final),
+        theme::metadata(),
+    )));
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
 
-    // Section 8: Match Story
+    // Section 7: Match Story
     lines.push(Line::from(Span::styled(
         "MATCH STORY",
         theme::section_header(),
@@ -331,7 +314,7 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
 
-    // Section 9: AI Prompt for Second Opinion
+    // Section 8: AI Prompt for Second Opinion
     lines.push(Line::from(Span::styled(
         "AI PROMPT FOR SECOND OPINION",
         theme::section_header(),
@@ -433,36 +416,6 @@ fn render_xg_bars(home_xg: f64, away_xg: f64, width: usize) -> Vec<Line<'static>
         Span::raw("          "),
         Span::styled(away_bar, theme::narrative()),
     ])]
-}
-
-fn render_match_context(stage_label: &str) -> Vec<Line<'static>> {
-    let round_name = format!("{} \u{00b7} Knockout Stage", stage_label);
-    let path = bracket_path(stage_label);
-
-    vec![
-        Line::from(Span::styled(round_name, theme::narrative())),
-        Line::raw(""),
-        Line::from(Span::styled(
-            format!("Winner faces TBD in the next round."),
-            theme::metadata(),
-        )),
-        Line::from(Span::styled(
-            format!("Path to final: {}", path),
-            theme::metadata(),
-        )),
-    ]
-}
-
-fn bracket_path(stage_label: &str) -> String {
-    match stage_label {
-        "R32" => "R32 \u{2192} R16 \u{2192} QF \u{2192} SF \u{2192} Final",
-        "R16" => "R16 \u{2192} QF \u{2192} SF \u{2192} Final",
-        "QF" => "QF \u{2192} SF \u{2192} Final",
-        "SF" => "SF \u{2192} Final",
-        "Final" => "Final",
-        _ => "Knockout Stage",
-    }
-    .to_string()
 }
 
 fn to_ist(match_date: &str) -> String {

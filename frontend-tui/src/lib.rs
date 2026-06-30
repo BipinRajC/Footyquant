@@ -1,6 +1,7 @@
 pub mod api;
 pub mod app;
 pub mod ascii_art;
+pub mod bracket;
 pub mod flags;
 pub mod models;
 pub mod splash_data;
