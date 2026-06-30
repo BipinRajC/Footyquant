@@ -22,7 +22,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     render_footer(
         frame,
         footer_area,
-        "\u{2191}\u{2193} Navigate \u{00b7} Enter: Match Analysis \u{00b7} M: Model Room \u{00b7} Q: Quit",
+        "\u{2191}\u{2193} Navigate \u{00b7} Enter: Match Analysis \u{00b7} M: Model Room \u{00b7} R: Refresh \u{00b7} Q: Quit",
     );
 }
 
@@ -438,7 +438,6 @@ fn render_quick_look(frame: &mut Frame, area: Rect, app: &App) {
                         .add_modifier(Modifier::BOLD),
                 )),
                 Line::raw(""),
-                Line::raw(""),
             ];
 
             if let (Some(hq), Some(aq)) = (pred_home_qual, pred_away_qual) {
@@ -494,6 +493,7 @@ fn render_quick_look(frame: &mut Frame, area: Rect, app: &App) {
                             ),
                             theme::narrative(),
                         )));
+                        lines.push(Line::raw(""));
                         lines.push(Line::from(Span::styled(
                             format!(
                                 "The model predicted extra time was likely ({}%). \
@@ -549,7 +549,6 @@ fn render_quick_look(frame: &mut Frame, area: Rect, app: &App) {
                         )
                     }
                 };
-                lines.push(Line::raw(""));
                 lines.push(Line::from(Span::styled(final_detail, theme::metadata())));
             } else {
                 lines.push(Line::from(vec![Span::styled(
@@ -679,7 +678,7 @@ fn render_quick_look(frame: &mut Frame, area: Rect, app: &App) {
 
             let summary = pred.quick_summary();
             let summary_lines = wrap_text(&summary, summary_area.width as usize);
-            let mut lines = vec![Line::raw(""), Line::raw("")];
+            let mut lines = vec![Line::raw("")];
             for sl in summary_lines {
                 lines.push(Line::from(Span::styled(sl, theme::narrative())));
             }
