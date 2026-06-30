@@ -1,4 +1,4 @@
-"""Scrape rich match stats from Fotmob for all WC 2026 matches."""
+"""Scrape rich match stats from Fotmob for knockout WC 2026 matches."""
 
 import json
 import os
@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from scrapling.fetchers import Fetcher
 from sqlalchemy import text
+from supabase import create_client
 
 load_dotenv()
 
@@ -142,6 +143,17 @@ def parse_match_data(fotmob_id):
     btts = bool(home_score and away_score and home_score > 0 and away_score > 0)
     total_goals = (home_score or 0) + (away_score or 0)
 
+    # AET / penalties detection
+    match_outcome = "regular"
+    aet_home = teams[0].get("etScore")
+    aet_away = teams[1].get("etScore")
+    pens_home = teams[0].get("penaltyScore")
+    pens_away = teams[1].get("penaltyScore")
+    if pens_home is not None or pens_away is not None:
+        match_outcome = "penalties"
+    elif aet_home is not None or aet_away is not None:
+        match_outcome = "aet"
+
     stats_data = content.get("stats", {})
     periods = stats_data.get("Periods", {})
     all_stats = (
@@ -157,6 +169,11 @@ def parse_match_data(fotmob_id):
         if isinstance(periods, dict)
         else []
     )
+    et_stats = (
+        periods.get("ExtraTime", {}).get("stats", [])
+        if isinstance(periods, dict)
+        else []
+    )
 
     row = {
         "fotmob_match_id": str(fotmob_id),
@@ -169,6 +186,17 @@ def parse_match_data(fotmob_id):
         "result_1x2": result,
         "btts": btts,
         "total_goals": total_goals,
+        "match_outcome": match_outcome,
+        "aet_home_score": aet_home,
+        "aet_away_score": aet_away,
+        "penalties_home_score": pens_home,
+        "penalties_away_score": pens_away,
+        "aet_xg_home": get_stat(et_stats, "top_stats", "expected_goals", 0),
+        "aet_xg_away": get_stat(et_stats, "top_stats", "expected_goals", 1),
+        "aet_shots_home": get_stat(et_stats, "top_stats", "total_shots", 0),
+        "aet_shots_away": get_stat(et_stats, "top_stats", "total_shots", 1),
+        "aet_shots_ontarget_home": get_stat(et_stats, "top_stats", "ShotsOnTarget", 0),
+        "aet_shots_ontarget_away": get_stat(et_stats, "top_stats", "ShotsOnTarget", 1),
         "possession_home": get_stat(all_stats, "top_stats", "BallPossesion", 0),
         "possession_away": get_stat(all_stats, "top_stats", "BallPossesion", 1),
         "xg_home": get_stat(all_stats, "top_stats", "expected_goals", 0),
@@ -287,6 +315,16 @@ def find_fotmob_id(home_team, away_team, match_date):
 def main():
     engine = get_engine()
 
+    supabase_url = os.environ.get("SUPABASE_URL", "")
+    supabase_key = os.environ.get("SUPABASE_ANON_KEY", "") or os.environ.get(
+        "SUPABASE_KEY", ""
+    )
+    supabase = (
+        create_client(supabase_url, supabase_key)
+        if supabase_url and supabase_key
+        else None
+    )
+
     with engine.connect() as conn:
         existing = {
             row[0]
@@ -331,6 +369,24 @@ def main():
                 ).fetchall()
             ]
 
+    # Filter to knockout matches only
+    print("    Filtering to knockout matches...")
+    with engine.connect() as conn:
+        knockout_fotmob_ids = {
+            row[0]
+            for row in conn.execute(
+                text("""
+                    SELECT DISTINCT m.fotmob_match_id
+                    FROM public.matches m
+                    JOIN clean_wc_fixtures f ON m.match_id = f.match_id
+                    WHERE f.is_knockout = true
+                      AND m.fotmob_match_id IS NOT NULL
+                """)
+            ).fetchall()
+        }
+    known_ids = [fid for fid in known_ids if str(fid) in knockout_fotmob_ids]
+    print(f"    Knockout matches to check: {len(known_ids)}")
+
     total = 0
     new = 0
 
@@ -353,6 +409,11 @@ def main():
                             INSERT INTO public.wcmatches_richstat_fotmob
                             (fotmob_match_id, match_id, match_date, home_team, away_team,
                              home_score, away_score, result_1x2, btts, total_goals,
+                             match_outcome, aet_home_score, aet_away_score,
+                             penalties_home_score, penalties_away_score,
+                             aet_xg_home, aet_xg_away,
+                             aet_shots_home, aet_shots_away,
+                             aet_shots_ontarget_home, aet_shots_ontarget_away,
                              possession_home, possession_away, xg_home, xg_away,
                              xgot_home, xgot_away, shots_home, shots_away,
                              shots_ontarget_home, shots_ontarget_away,
@@ -383,6 +444,11 @@ def main():
                             VALUES (:fotmob_match_id, :match_id, :match_date,
                              :home_team, :away_team,
                              :home_score, :away_score, :result_1x2, :btts, :total_goals,
+                             :match_outcome, :aet_home_score, :aet_away_score,
+                             :penalties_home_score, :penalties_away_score,
+                             :aet_xg_home, :aet_xg_away,
+                             :aet_shots_home, :aet_shots_away,
+                             :aet_shots_ontarget_home, :aet_shots_ontarget_away,
                              :possession_home, :possession_away, :xg_home, :xg_away,
                              :xgot_home, :xgot_away, :shots_home, :shots_away,
                              :shots_ontarget_home, :shots_ontarget_away,
@@ -415,18 +481,53 @@ def main():
                         row,
                     )
                 new += 1
+                outcome = row.get("match_outcome", "regular")
+                outcome_tag = f" [{outcome}]" if outcome != "regular" else ""
                 print(
-                    f"OK ({row['home_team']} {row['home_score']}-{row['away_score']} {row['away_team']})"
+                    f"OK ({row['home_team']} {row['home_score']}-{row['away_score']} {row['away_team']}{outcome_tag})"
                 )
+
+                # Update clean_wc_fixtures in Supabase with outcome data
+                if supabase:
+                    match_id = row.get("match_id")
+                    if not match_id:
+                        with engine.connect() as conn:
+                            result = conn.execute(
+                                text(
+                                    "SELECT match_id FROM public.matches WHERE fotmob_match_id = :fid"
+                                ),
+                                {"fid": fid},
+                            ).fetchone()
+                            match_id = result[0] if result else None
+                    if match_id:
+                        update_data = {
+                            "match_outcome": outcome,
+                            "aet_home_score": row.get("aet_home_score"),
+                            "aet_away_score": row.get("aet_away_score"),
+                            "penalties_home_score": row.get("penalties_home_score"),
+                            "penalties_away_score": row.get("penalties_away_score"),
+                            "aet_home_xg": row.get("aet_xg_home"),
+                            "aet_away_xg": row.get("aet_xg_away"),
+                        }
+                        update_data = {
+                            k: v for k, v in update_data.items() if v is not None
+                        }
+                        try:
+                            supabase.table("clean_wc_fixtures").update(update_data).eq(
+                                "match_id", match_id
+                            ).execute()
+                        except Exception as e:
+                            print(f"      Supabase update error: {e}")
             else:
                 print("Not finished or no data")
+                break
         except Exception as e:
             print(f"ERROR: {e}")
 
         total += 1
         time.sleep(0.3)
 
-    print(f"\nDone. Scraped {new} new matches (total checked: {total})")
+    print(f"\nDone. Scraped {new} new knockout matches (total checked: {total})")
 
 
 if __name__ == "__main__":
