@@ -50,10 +50,18 @@ pub struct Scoreline {
 
 impl MatchPrediction {
     pub fn scorelines(&self) -> Vec<Scoreline> {
-        self.dc_top_scorelines
-            .as_ref()
-            .and_then(|v| serde_json::from_value::<Vec<Scoreline>>(v.clone()).ok())
-            .unwrap_or_default()
+        let val = self.dc_top_scorelines.as_ref();
+        if let Some(v) = val {
+            if let Ok(sls) = serde_json::from_value::<Vec<Scoreline>>(v.clone()) {
+                return sls;
+            }
+            if let Some(s) = v.as_str() {
+                if let Ok(sls) = serde_json::from_str::<Vec<Scoreline>>(s) {
+                    return sls;
+                }
+            }
+        }
+        Vec::new()
     }
 
     pub fn ci_width_1x2(&self) -> f64 {
