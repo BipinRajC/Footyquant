@@ -84,25 +84,14 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     )));
     lines.push(Line::raw(""));
 
-    // Team names
+    // Team names — centered symmetric layout
+    let padding = " ".repeat(8);
     lines.push(Line::from(vec![
-        Span::raw("     "),
-        Span::styled(format!("{:<16}", home.to_uppercase()), theme::team_name()),
-        Span::raw("          "),
-        Span::styled(format!("{:>16}", away.to_uppercase()), theme::team_name()),
+        Span::raw(&padding),
+        Span::styled(format!("{:^16}", home.to_uppercase()), theme::team_name()),
+        Span::raw("  vs  "),
+        Span::styled(format!("{:^16}", away.to_uppercase()), theme::team_name()),
     ]));
-    lines.push(Line::from(Span::styled(
-        format!("     {}", crate::ascii_art::vs_separator()),
-        theme::label_gray(),
-    )));
-    lines.push(Line::from(Span::styled(
-        "                    vs",
-        theme::label_amber(),
-    )));
-    lines.push(Line::from(Span::styled(
-        format!("     {}", crate::ascii_art::vs_separator()),
-        theme::label_gray(),
-    )));
     lines.push(Line::raw(""));
 
     // 1X2
