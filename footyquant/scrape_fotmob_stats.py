@@ -290,7 +290,7 @@ def parse_match_data(fotmob_id):
         "shots_secondhalf_away": get_stat(
             second_half_stats, "top_stats", "total_shots", 1
         ),
-        "raw_response": text[:5000],
+        "raw_response": json.dumps(text[:5000]),
         "scraped_at": datetime.now(timezone.utc),
     }
 
