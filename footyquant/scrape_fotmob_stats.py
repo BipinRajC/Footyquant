@@ -290,7 +290,7 @@ def parse_match_data(fotmob_id):
         "shots_secondhalf_away": get_stat(
             second_half_stats, "top_stats", "total_shots", 1
         ),
-        "raw_response": "{}",
+        "raw_response": text[:5000],
         "scraped_at": datetime.now(timezone.utc),
     }
 
@@ -487,7 +487,8 @@ def main():
                             result = conn.execute(
                                 text("""
                                     SELECT match_id FROM clean_wc_fixtures
-                                    WHERE home_team = :ht AND away_team = :at
+                                    WHERE (home_team = :ht AND away_team = :at)
+                                       OR (home_team = :at AND away_team = :ht)
                                     LIMIT 1
                                 """),
                                 {
