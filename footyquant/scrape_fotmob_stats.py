@@ -179,8 +179,8 @@ def parse_match_data(fotmob_id):
         "fotmob_match_id": str(fotmob_id),
         "match_id": None,
         "match_date": match_date,
-        "home_team": home_name,
-        "away_team": away_name,
+        "home_team": normalize(home_name),
+        "away_team": normalize(away_name),
         "home_score": home_score,
         "away_score": away_score,
         "result_1x2": result,
@@ -369,23 +369,10 @@ def main():
                 ).fetchall()
             ]
 
-    # Filter to knockout matches only
-    print("    Filtering to knockout matches...")
-    with engine.connect() as conn:
-        knockout_fotmob_ids = {
-            row[0]
-            for row in conn.execute(
-                text("""
-                    SELECT DISTINCT m.fotmob_match_id
-                    FROM public.matches m
-                    JOIN clean_wc_fixtures f ON m.match_id::text = f.match_id
-                    WHERE f.is_knockout = true
-                      AND m.fotmob_match_id IS NOT NULL
-                """)
-            ).fetchall()
-        }
-    known_ids = [fid for fid in known_ids if str(fid) in knockout_fotmob_ids]
-    print(f"    Knockout matches to check: {len(known_ids)}")
+    # Group stage matches are already in the DB from the initial scrape.
+    # The existing + early-stop logic handles the rest:
+    # - Already-scraped matches are skipped
+    # - First unfinished match breaks the loop
 
     total = 0
     new = 0
@@ -493,10 +480,15 @@ def main():
                     if not match_id:
                         with engine.connect() as conn:
                             result = conn.execute(
-                                text(
-                                    "SELECT match_id FROM public.matches WHERE fotmob_match_id = :fid"
-                                ),
-                                {"fid": fid},
+                                text("""
+                                    SELECT match_id FROM clean_wc_fixtures
+                                    WHERE home_team = :ht AND away_team = :at
+                                    LIMIT 1
+                                """),
+                                {
+                                    "ht": normalize(row["home_team"]),
+                                    "at": normalize(row["away_team"]),
+                                },
                             ).fetchone()
                             match_id = result[0] if result else None
                     if match_id:
