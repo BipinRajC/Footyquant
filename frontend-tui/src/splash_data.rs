@@ -58,7 +58,7 @@ pub struct AliveTeamRow {
 }
 
 pub fn alive_teams_query() -> &'static str {
-    "stage=eq.knockout&select=home_team,away_team,result_1x2"
+    "is_knockout=eq.true&select=home_team,away_team,result_1x2"
 }
 
 pub const WC_FACTS: &[&str] = &[
