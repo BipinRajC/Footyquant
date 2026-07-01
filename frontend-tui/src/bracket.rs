@@ -287,13 +287,20 @@ pub fn get_match_context(
         let next_slot = bracket.iter().find(|s| s.slot_id == next_slot_id);
         match next_slot {
             Some(ns) => {
-                let resolved: Vec<String> = ns
+                let self_ref = format!("Winner({})", slot.slot_id);
+                let self_ref_loser = format!("Loser({})", slot.slot_id);
+                let opponent: Vec<String> = ns
                     .teams
                     .iter()
+                    .filter(|t| **t != self_ref && **t != self_ref_loser)
                     .map(|t| describe_team(t, &winner_map, &bracket))
                     .collect();
-                let opponent = resolved.join(" vs ");
-                (opponent, ns.round.to_string())
+                let opponent_str = if opponent.is_empty() {
+                    "TBD".to_string()
+                } else {
+                    opponent.join(" vs ")
+                };
+                (opponent_str, ns.round.to_string())
             }
             None => ("TBD".to_string(), "next round".to_string()),
         }
