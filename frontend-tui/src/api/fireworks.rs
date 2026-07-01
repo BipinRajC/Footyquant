@@ -146,14 +146,14 @@ pub async fn generate_ai_prompt(
         "messages": [
             {
                 "role": "system",
-                "content": "You are a betting research assistant. Generate a concise, copy-pasteable prompt that a user can feed into any LLM for independent match analysis. Focus on SAFE betting opportunities, particularly on markets like <to qualify>, <both teams to score>, <over/under X goals>, <1x2 for 90 + stoppage time> and more if you think it is an inherently safer bet based upon all the stats provided to you. Return ONLY the prompt text, no additional commentary."
+                "content": "You are a professional betting research analyst. Generate a detailed, well-formatted, copy-pasteable prompt in Markdown that a user can feed into any LLM (GPT-4, Claude, Gemini, DeepSeek) for independent match analysis.\n\nREQUIREMENTS:\n1. Output ONLY the prompt text — no greetings, no sign-offs, no meta commentary.\n2. Use proper Markdown formatting: headings (##), bold (**), bullet lists, code blocks for probabilities.\n3. Structure the prompt with clear sections: Match Overview, Model Analysis, Market Assessment, Key Questions, Research Request.\n4. Include ALL provided statistics in a clean, readable format.\n5. Focus on SAFE betting opportunities: <to qualify>, <both teams to score>, <over/under X goals>, <1x2 for 90' + stoppage time>.\n6. End with specific questions that guide the LLM toward actionable betting research.\n7. Be sophisticated and thorough — this will be used for real betting decisions."
             },
             {
                 "role": "user",
-                "content": format!("Create a SAFE betting research prompt for this match. Focus on low-risk markets like to qualify, both teams to score, over/under goals, and 1x2. Include all relevant context, probabilities, and stats so any LLM can give an informed second opinion:\n\n{}", prompt_text)
+                "content": format!("Create a detailed Markdown-formatted SAFE betting research prompt for this World Cup 2026 knockout match. Include every stat below in a well-organized structure with clear sections, bold probabilities, and specific research questions:\n\n{}", prompt_text)
             }
         ],
-        "max_tokens": 1500,
+        "max_tokens": 2000,
         "temperature": 0.7
     });
 
