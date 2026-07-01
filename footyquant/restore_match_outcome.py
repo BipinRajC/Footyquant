@@ -31,9 +31,9 @@ with engine.connect() as conn:
     for r in rows:
         mid = conn.execute(
             text(
-                "SELECT match_id FROM clean_wc_fixtures WHERE (home_team = :1 AND away_team = :2) OR (home_team = :2 AND away_team = :1) LIMIT 1",
+                "SELECT match_id FROM clean_wc_fixtures WHERE (home_team = :ht AND away_team = :at) OR (home_team = :at AND away_team = :ht) LIMIT 1",
             ),
-            [r[1], r[2]],
+            {"ht": r[1], "at": r[2]},
         ).fetchone()
         if mid:
             upd = {
