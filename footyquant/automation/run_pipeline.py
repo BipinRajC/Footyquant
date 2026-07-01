@@ -98,6 +98,10 @@ with engine.begin() as conn:
             "9b/10 Ensure AET/pens columns exist",
         ),
         (
+            f"PYTHONPATH={root} {venv_python} {os.path.join(root, 'footyquant', 'update_bracket.py')}",
+            "9c/10 Update bracket with actual team names",
+        ),
+        (
             f"PYTHONPATH={root} {venv_python} {os.path.join(root, 'footyquant', 'modelling', 'model.py')}",
             "10/10 Retrain model and predict upcoming matches",
         ),

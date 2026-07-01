@@ -259,9 +259,8 @@ pub fn get_match_context(
 ) -> MatchContext {
     let bracket = build_bracket();
     let slot = bracket.iter().find(|s| {
-        s.round == "R32"
-            && ((s.teams[0] == home_team && s.teams[1] == away_team)
-                || (s.teams[0] == away_team && s.teams[1] == home_team))
+        (s.teams[0] == home_team && s.teams[1] == away_team)
+            || (s.teams[0] == away_team && s.teams[1] == home_team)
     });
 
     let slot = match slot {
@@ -328,9 +327,8 @@ fn build_winner_map(
         };
 
         if let Some(slot) = bracket.iter().find(|s| {
-            s.round == "R32"
-                && ((s.teams[0] == row.home_team && s.teams[1] == row.away_team)
-                    || (s.teams[0] == row.away_team && s.teams[1] == row.home_team))
+            (s.teams[0] == row.home_team && s.teams[1] == row.away_team)
+                || (s.teams[0] == row.away_team && s.teams[1] == row.home_team)
         }) {
             map.insert(slot.slot_id.to_string(), winner);
         }
