@@ -98,8 +98,32 @@ with engine.begin() as conn:
             "9b/10 Ensure AET/pens columns exist",
         ),
         (
+            f"""PYTHONPATH={root} {venv_python} -c "
+from footyquant.db import get_engine
+from sqlalchemy import text
+import os
+from supabase import create_client
+engine = get_engine()
+url = key = ''
+for line in open(os.path.join('{root}', '.env')) if os.path.exists(os.path.join('{root}', '.env')) else []:
+    if line.startswith('SUPABASE_URL='): url = line.split('=',1)[1].strip()
+    elif line.startswith('SUPABASE_ANON_KEY='): key = line.split('=',1)[1].strip()
+if url and key:
+    supabase = create_client(url, key)
+    with engine.connect() as conn:
+        rows = conn.execute(text(\"\"\"SELECT fotmob_match_id, home_team, away_team, match_outcome, aet_home_score, aet_away_score, penalties_home_score, penalties_away_score, aet_xg_home, aet_xg_away FROM public.wcmatches_richstat_fotmob WHERE match_outcome IS NOT NULL\"\"\")).fetchall()
+        for r in rows:
+            mid = conn.execute(text(\"SELECT match_id FROM clean_wc_fixtures WHERE (home_team = :ht AND away_team = :at) OR (home_team = :at AND away_team = :ht) LIMIT 1\"), {"ht":r.home_team,'at':r.away_team}).fetchone()
+            if mid:
+                upd = {k:v for k,v in {'match_outcome':r.match_outcome,'aet_home_score':r.aet_home_score,'aet_away_score':r.aet_away_score,'penalties_home_score':r.penalties_home_score,'penalties_away_score':r.penalties_away_score,'aet_home_xg':r.aet_xg_home,'aet_away_xg':r.aet_xg_away}.items() if v is not None}
+                supabase.table('clean_wc_fixtures').update(upd).eq('match_id',mid[0]).execute()
+    print(f'Restored match_outcome for {len(rows)} matches')
+" """,
+            "9c/10 Restore match_outcome data from local DB",
+        ),
+        (
             f"PYTHONPATH={root} {venv_python} {os.path.join(root, 'footyquant', 'update_bracket.py')}",
-            "9c/10 Update bracket with actual team names",
+            "9d/10 Update bracket with actual team names",
         ),
         (
             f"PYTHONPATH={root} {venv_python} {os.path.join(root, 'footyquant', 'modelling', 'model.py')}",
