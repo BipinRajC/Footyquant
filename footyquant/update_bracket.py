@@ -164,6 +164,28 @@ def main():
                                 except Exception as e:
                                     print(f"      ERROR updating {slot_id}: {e}")
 
+    # Also update match_predictions with actual team names for fixture list
+    print("    Updating match_predictions with actual team names...")
+    for m in all_matches:
+        if m["home_team"].startswith("Winner(") or m["home_team"].startswith("Loser("):
+            old_home = m["home_team"]
+            old_away = m["away_team"]
+            new_home = resolve_team(old_home, winner_map)
+            new_away = resolve_team(old_away, winner_map)
+            if new_home != old_home or new_away != old_away:
+                try:
+                    supabase.table("match_predictions").update(
+                        {
+                            "home_team": new_home,
+                            "away_team": new_away,
+                        }
+                    ).eq("match_id", m["match_id"]).execute()
+                    print(
+                        f"      Updated predictions {m['match_id']}: {old_home} vs {old_away} -> {new_home} vs {new_away}"
+                    )
+                except Exception as e:
+                    print(f"      ERROR updating predictions {m['match_id']}: {e}")
+
     print("  Bracket update complete.")
 
 

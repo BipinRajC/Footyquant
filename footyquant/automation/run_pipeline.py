@@ -74,8 +74,12 @@ def main():
             "8/10 Propagate knockout results from Fotmob to wc_matches",
         ),
         (
+            f"PYTHONPATH={root} {venv_python} {os.path.join(root, 'footyquant', 'update_bracket.py')}",
+            "9a/10 Update bracket with actual team names",
+        ),
+        (
             f"PYTHONPATH={root} {venv_python} -m footyquant rebuild modeling",
-            "9/10 Rebuild all clean modeling tables",
+            "9b/10 Rebuild all clean modeling tables (with actual names)",
         ),
         (
             f"""PYTHONPATH={root} {venv_python} -c "
@@ -95,7 +99,7 @@ with engine.begin() as conn:
         conn.execute(text(q))
     print('AET/pens columns ensured')
 " """,
-            "9b/10 Ensure AET/pens columns exist",
+            "9c/10 Ensure AET/pens columns exist",
         ),
         (
             f"""PYTHONPATH={root} {venv_python} -c "
@@ -119,11 +123,7 @@ if url and key:
                 supabase.table('clean_wc_fixtures').update(upd).eq('match_id',mid[0]).execute()
     print(f'Restored match_outcome for {len(rows)} matches')
 " """,
-            "9c/10 Restore match_outcome data from local DB",
-        ),
-        (
-            f"PYTHONPATH={root} {venv_python} {os.path.join(root, 'footyquant', 'update_bracket.py')}",
-            "9d/10 Update bracket with actual team names",
+            "9d/10 Restore match_outcome data from local DB",
         ),
         (
             f"PYTHONPATH={root} {venv_python} {os.path.join(root, 'footyquant', 'modelling', 'model.py')}",
