@@ -387,6 +387,46 @@ def main():
         if fid in existing:
             print(f"  [{total + 1}/{len(known_ids)}] Skipping {fid} (already exists)")
             total += 1
+            if supabase:
+                with engine.connect() as conn:
+                    row = conn.execute(
+                        text("""
+                            SELECT fotmob_match_id, home_team, away_team,
+                                   match_outcome, aet_home_score, aet_away_score,
+                                   penalties_home_score, penalties_away_score,
+                                   aet_xg_home, aet_xg_away
+                            FROM public.wcmatches_richstat_fotmob
+                            WHERE fotmob_match_id = :fid
+                        """),
+                        {"fid": fid},
+                    ).fetchone()
+                    if row and row.match_outcome:
+                        mid = conn.execute(
+                            text(
+                                "SELECT match_id FROM clean_wc_fixtures WHERE (home_team = :ht AND away_team = :at) OR (home_team = :at AND away_team = :ht) LIMIT 1"
+                            ),
+                            {"ht": row.home_team, "at": row.away_team},
+                        ).fetchone()
+                        if mid:
+                            upd = {
+                                k: v
+                                for k, v in {
+                                    "match_outcome": row.match_outcome,
+                                    "aet_home_score": row.aet_home_score,
+                                    "aet_away_score": row.aet_away_score,
+                                    "penalties_home_score": row.penalties_home_score,
+                                    "penalties_away_score": row.penalties_away_score,
+                                    "aet_home_xg": row.aet_xg_home,
+                                    "aet_away_xg": row.aet_xg_away,
+                                }.items()
+                                if v is not None
+                            }
+                            try:
+                                supabase.table("clean_wc_fixtures").update(upd).eq(
+                                    "match_id", mid[0]
+                                ).execute()
+                            except Exception:
+                                pass
             continue
 
         print(
