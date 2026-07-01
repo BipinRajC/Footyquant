@@ -290,7 +290,7 @@ pub fn get_match_context(
                 let resolved: Vec<String> = ns
                     .teams
                     .iter()
-                    .map(|t| resolve_team(t, &winner_map))
+                    .map(|t| describe_team(t, &winner_map, &bracket))
                     .collect();
                 let opponent = resolved.join(" vs ");
                 (opponent, ns.round.to_string())
@@ -366,6 +366,38 @@ fn resolve_team(team: &str, winner_map: &HashMap<String, String>) -> String {
             .get(inner)
             .cloned()
             .unwrap_or_else(|| team.to_string())
+    } else {
+        team.to_string()
+    }
+}
+
+fn describe_team(
+    team: &str,
+    winner_map: &HashMap<String, String>,
+    bracket: &[BracketSlot],
+) -> String {
+    if let Some(inner) = team
+        .strip_prefix("Winner(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        if let Some(winner) = winner_map.get(inner) {
+            return winner.clone();
+        }
+        if let Some(slot) = bracket.iter().find(|s| s.slot_id == inner) {
+            return format!("Winner of {} vs {}", slot.teams[0], slot.teams[1]);
+        }
+        team.to_string()
+    } else if let Some(inner) = team
+        .strip_prefix("Loser(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        if let Some(winner) = winner_map.get(inner) {
+            return winner.clone();
+        }
+        if let Some(slot) = bracket.iter().find(|s| s.slot_id == inner) {
+            return format!("Loser of {} vs {}", slot.teams[0], slot.teams[1]);
+        }
+        team.to_string()
     } else {
         team.to_string()
     }
