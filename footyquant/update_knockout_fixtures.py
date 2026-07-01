@@ -73,7 +73,7 @@ def main():
         if pd.isna(match_no):
             continue
         match_str = str(match_no)
-        if not match_str.isdigit() or int(match_str) < 73 or int(match_str) > 88:
+        if not match_str.isdigit() or int(match_str) < 73 or int(match_str) > 96:
             continue
         team1 = normalize(r.iloc[8])
         team2 = normalize(r.iloc[9])
@@ -90,11 +90,9 @@ def main():
         )
 
     excel_matches.sort(key=lambda x: x["local_date"])
-    print(f"    Excel R32 matches with teams: {len(excel_matches)}")
-    for m in excel_matches:
-        print(
-            f"      Match {m['match_no']}: {m['team1']} vs {m['team2']} ({m['local_date']})"
-        )
+    r32_excel = [m for m in excel_matches if m["match_no"] <= 88]
+    r16_excel = [m for m in excel_matches if m["match_no"] >= 89]
+    print(f"    Excel R32 matches: {len(r32_excel)}, R16 matches: {len(r16_excel)}")
 
     db_r32 = [
         r
@@ -105,8 +103,9 @@ def main():
     db_r32.sort(key=lambda x: pd.to_datetime(x["match_date"], utc=True))
     print(f"    DB R32 matches: {len(db_r32)}")
 
+    # Update R32 matches in wc_matches
     updates = []
-    for i, (excel_m, db_m) in enumerate(zip(excel_matches, db_r32)):
+    for i, (excel_m, db_m) in enumerate(zip(r32_excel, db_r32)):
         old_home = db_m["home_team"]
         old_away = db_m["away_team"]
         new_home = excel_m["team1"]
@@ -122,20 +121,48 @@ def main():
                 }
             )
 
-    print(f"    Updates needed: {len(updates)}")
+    print(f"    R32 updates needed: {len(updates)}")
     for u in updates:
         print(f"      {u['match_id']}: {u['old']} -> {u['new']}")
         try:
             supabase.table("wc_matches").update(
-                {
-                    "home_team": u["home_team"],
-                    "away_team": u["away_team"],
-                }
+                {"home_team": u["home_team"], "away_team": u["away_team"]}
             ).eq("match_id", u["match_id"]).execute()
         except Exception as e:
             print(f"      ERROR: {e}")
 
-    print(f"    Updated {len(updates)} knockout fixtures")
+    # Update R16 matches in clean_wc_fixtures and match_predictions
+    db_r16 = [
+        r
+        for r in db_rows
+        if pd.to_datetime(r["match_date"], utc=True)
+        >= pd.Timestamp("2026-07-04", tz="UTC")
+        and pd.to_datetime(r["match_date"], utc=True)
+        < pd.Timestamp("2026-07-09", tz="UTC")
+    ]
+    db_r16.sort(key=lambda x: pd.to_datetime(x["match_date"], utc=True))
+    print(f"    DB R16 matches: {len(db_r16)}")
+
+    r16_updates = 0
+    for excel_m, db_m in zip(r16_excel, db_r16):
+        new_home = excel_m["team1"]
+        new_away = excel_m["team2"]
+        old_home = db_m["home_team"]
+        old_away = db_m["away_team"]
+        if old_home != new_home or old_away != new_away:
+            for table in ["clean_wc_fixtures", "match_predictions"]:
+                try:
+                    supabase.table(table).update(
+                        {"home_team": new_home, "away_team": new_away}
+                    ).eq("match_id", db_m["match_id"]).execute()
+                except Exception:
+                    pass
+            print(
+                f"      R16 {db_m['match_id']}: {old_home} vs {old_away} -> {new_home} vs {new_away}"
+            )
+            r16_updates += 1
+
+    print(f"    Updated {len(updates)} R32 + {r16_updates} R16 fixtures")
     print("  Done.")
 
 
