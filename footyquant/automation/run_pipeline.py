@@ -78,6 +78,26 @@ def main():
             "9/10 Rebuild all clean modeling tables",
         ),
         (
+            f"""PYTHONPATH={root} {venv_python} -c "
+from footyquant.db import get_engine
+from sqlalchemy import text
+engine = get_engine()
+with engine.begin() as conn:
+    for q in [
+        'ALTER TABLE clean_wc_fixtures ADD COLUMN IF NOT EXISTS match_outcome TEXT',
+        'ALTER TABLE clean_wc_fixtures ADD COLUMN IF NOT EXISTS aet_home_score INTEGER',
+        'ALTER TABLE clean_wc_fixtures ADD COLUMN IF NOT EXISTS aet_away_score INTEGER',
+        'ALTER TABLE clean_wc_fixtures ADD COLUMN IF NOT EXISTS penalties_home_score INTEGER',
+        'ALTER TABLE clean_wc_fixtures ADD COLUMN IF NOT EXISTS penalties_away_score INTEGER',
+        'ALTER TABLE clean_wc_fixtures ADD COLUMN IF NOT EXISTS aet_home_xg REAL',
+        'ALTER TABLE clean_wc_fixtures ADD COLUMN IF NOT EXISTS aet_away_xg REAL',
+    ]:
+        conn.execute(text(q))
+    print('AET/pens columns ensured')
+" """,
+            "9b/10 Ensure AET/pens columns exist",
+        ),
+        (
             f"PYTHONPATH={root} {venv_python} {os.path.join(root, 'footyquant', 'modelling', 'model.py')}",
             "10/10 Retrain model and predict upcoming matches",
         ),
