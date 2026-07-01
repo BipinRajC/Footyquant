@@ -2102,11 +2102,19 @@ def main():
     market_odds = load_market_odds(supabase)
     print(f"    Market odds (pre-kickoff): {len(market_odds)} rows")
 
-    intl_df = load_international_matches(supabase)
-    print(f"    International matches: {len(intl_df)} rows")
+    try:
+        intl_df = load_international_matches(supabase)
+        print(f"    International matches: {len(intl_df)} rows")
+    except Exception as e:
+        print(f"    International matches: SKIPPED ({e})")
+        intl_df = pd.DataFrame()
 
-    tour_df = load_tournament_matches(supabase)
-    print(f"    Tournament matches: {len(tour_df)} rows")
+    try:
+        tour_df = load_tournament_matches(supabase)
+        print(f"    Tournament matches: {len(tour_df)} rows")
+    except Exception as e:
+        print(f"    Tournament matches: SKIPPED ({e})")
+        tour_df = pd.DataFrame()
 
     # 2. Pre-compute odds index (used everywhere)
     print("  [2/9] Building odds index...")
