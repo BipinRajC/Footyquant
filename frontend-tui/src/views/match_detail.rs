@@ -1,5 +1,6 @@
 use crate::app::App;
 use crate::bracket;
+use crate::market_engine;
 use crate::theme;
 use crate::timeline::stage_label_for;
 use crate::widgets::{prob_display, scoreline_grid, team_compare};
@@ -303,7 +304,60 @@ fn render_body(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::raw(""));
     lines.push(Line::raw(""));
 
-    // Section 8: AI Prompt for Second Opinion
+    // Section 8: Recommended Markets
+    lines.push(Line::from(Span::styled(
+        "RECOMMENDED MARKETS",
+        theme::section_header(),
+    )));
+    lines.push(Line::from(Span::styled(
+        theme::separator(),
+        theme::label_gray(),
+    )));
+    lines.push(Line::raw(""));
+
+    let markets = market_engine::evaluate_markets(pred, app.current_feature.as_ref());
+    if markets.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  No high-confidence markets identified for this match.",
+            theme::label_gray(),
+        )));
+    } else {
+        for (i, m) in markets.iter().enumerate() {
+            let star_style = if m.confidence == "Very High" {
+                theme::confidence_high()
+            } else if m.confidence == "High" {
+                Style::default().fg(theme::AMBER)
+            } else {
+                theme::metadata()
+            };
+            lines.push(Line::from(vec![
+                Span::styled(format!("{}. ", i + 1), theme::number()),
+                Span::styled(m.selection.clone(), theme::team_name()),
+            ]));
+            lines.push(Line::from(vec![
+                Span::raw("     "),
+                Span::styled(m.confidence_stars, star_style),
+                Span::raw(" "),
+                Span::styled(
+                    format!("[{}]", m.confidence),
+                    theme::confidence_style(m.confidence),
+                ),
+                Span::raw(" \u{00b7} "),
+                Span::styled(format!("{} Risk", m.risk), theme::metadata()),
+                Span::raw(" \u{00b7} "),
+                Span::styled(format!("{} units", m.stake), theme::number()),
+            ]));
+            for reason in &m.reason {
+                lines.push(Line::from(vec![
+                    Span::raw("     \u{2022} "),
+                    Span::styled(reason, theme::narrative()),
+                ]));
+            }
+            lines.push(Line::raw(""));
+        }
+    }
+
+    // Section 9: AI Prompt for Second Opinion
     lines.push(Line::from(Span::styled(
         "AI PROMPT FOR SECOND OPINION",
         theme::section_header(),

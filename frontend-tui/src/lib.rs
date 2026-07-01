@@ -3,6 +3,7 @@ pub mod app;
 pub mod ascii_art;
 pub mod bracket;
 pub mod flags;
+pub mod market_engine;
 pub mod models;
 pub mod splash_data;
 pub mod theme;
